@@ -12,11 +12,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.eventhub.dto.PaymentRequest;
-import com.eventhub.dto.PaymentResponse;
-import com.eventhub.dto.RefundRequest;
+
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service

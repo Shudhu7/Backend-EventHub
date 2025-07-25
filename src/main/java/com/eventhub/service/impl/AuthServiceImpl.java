@@ -19,9 +19,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.eventhub.dto.PaymentRequest;
-import com.eventhub.dto.PaymentResponse;
-import com.eventhub.dto.RefundRequest;
+
 import java.util.HashSet;
 import java.util.Set;
 

@@ -63,6 +63,16 @@ public class SecurityConfig {
                 .requestMatchers("/api/events/category/{category}").permitAll()
                 .requestMatchers("/api/reviews/event/{eventId}").permitAll()
                 
+                // Swagger UI endpoints
+                .requestMatchers("/swagger-ui/**").permitAll()
+                .requestMatchers("/swagger-ui.html").permitAll()
+                .requestMatchers("/v3/api-docs/**").permitAll()
+                .requestMatchers("/swagger-resources/**").permitAll()
+                .requestMatchers("/webjars/**").permitAll()
+                
+                // Actuator endpoints
+                .requestMatchers("/actuator/**").permitAll()
+                
                 // Admin only endpoints
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/events/create").hasRole("ADMIN")

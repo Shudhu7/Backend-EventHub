@@ -6,9 +6,10 @@ spring:
     name: EventHubBackend
   
   datasource:
-    url: jdbc:mysql://localhost:3306/eventhub?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+    # Update this password to your actual MySQL root password
+    url: jdbc:mysql://localhost:3306/eventhub_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
     username: root
-    password: yourpassword
+    password: 12345  # Change this to your MySQL password
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
