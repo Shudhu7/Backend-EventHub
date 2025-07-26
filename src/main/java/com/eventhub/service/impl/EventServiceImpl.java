@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -31,6 +32,8 @@ public class EventServiceImpl implements EventService {
         Event event = convertToEntity(eventDTO);
         event.setAvailableSeats(event.getTotalSeats());
         event.setIsActive(true);
+        event.setCreatedAt(LocalDateTime.now());
+        event.setUpdatedAt(LocalDateTime.now());
         
         Event savedEvent = eventRepository.save(event);
         return convertToDTO(savedEvent);
@@ -50,6 +53,7 @@ public class EventServiceImpl implements EventService {
         existingEvent.setPrice(eventDTO.getPrice());
         existingEvent.setCategory(eventDTO.getCategory());
         existingEvent.setImage(eventDTO.getImage());
+        existingEvent.setUpdatedAt(LocalDateTime.now());
         
         // Update total seats and adjust available seats if needed
         if (eventDTO.getTotalSeats() != null) {
@@ -71,7 +75,7 @@ public class EventServiceImpl implements EventService {
     
     @Override
     public List<EventDTO> getAllActiveEvents() {
-        List<Event> events = eventRepository.findByIsActiveTrue();
+        List<Event> events = eventRepository.findActiveEvents();
         return events.stream()
             .map(this::convertToDTO)
             .collect(Collectors.toList());
@@ -79,13 +83,13 @@ public class EventServiceImpl implements EventService {
     
     @Override
     public Page<EventDTO> getAllActiveEvents(Pageable pageable) {
-        Page<Event> events = eventRepository.findByIsActiveTrue(pageable);
+        Page<Event> events = eventRepository.findActiveEvents(pageable);
         return events.map(this::convertToDTO);
     }
     
     @Override
     public List<EventDTO> getEventsByCategory(Event.Category category) {
-        List<Event> events = eventRepository.findByCategory(category);
+        List<Event> events = eventRepository.findActiveEventsByCategory(category);
         return events.stream()
             .map(this::convertToDTO)
             .collect(Collectors.toList());
@@ -93,7 +97,7 @@ public class EventServiceImpl implements EventService {
     
     @Override
     public Page<EventDTO> getEventsByCategory(Event.Category category, Pageable pageable) {
-        Page<Event> events = eventRepository.findByCategoryAndIsActiveTrue(category, pageable);
+        Page<Event> events = eventRepository.findActiveEventsByCategory(category, pageable);
         return events.map(this::convertToDTO);
     }
     
@@ -110,8 +114,8 @@ public class EventServiceImpl implements EventService {
                                      LocalDate startDate, LocalDate endDate,
                                      BigDecimal minPrice, BigDecimal maxPrice,
                                      Pageable pageable) {
-        Page<Event> events = eventRepository.findEventsWithFilters(
-            category, location, startDate, endDate, minPrice, maxPrice, pageable);
+        Page<Event> events = eventRepository.filterEvents(category, location, 
+            startDate, endDate, minPrice, maxPrice, pageable);
         return events.map(this::convertToDTO);
     }
     
@@ -178,6 +182,7 @@ public class EventServiceImpl implements EventService {
         
         // Soft delete
         event.setIsActive(false);
+        event.setUpdatedAt(LocalDateTime.now());
         eventRepository.save(event);
     }
     
@@ -186,11 +191,13 @@ public class EventServiceImpl implements EventService {
         Event event = eventRepository.findById(eventId)
             .orElseThrow(() -> new RuntimeException("Event not found with id: " + eventId));
         
-        if (event.getAvailableSeats() < seatsBooked) {
+        int newAvailableSeats = event.getAvailableSeats() - seatsBooked;
+        if (newAvailableSeats < 0) {
             throw new RuntimeException("Not enough available seats");
         }
         
-        event.setAvailableSeats(event.getAvailableSeats() - seatsBooked);
+        event.setAvailableSeats(newAvailableSeats);
+        event.setUpdatedAt(LocalDateTime.now());
         eventRepository.save(event);
     }
     
@@ -199,42 +206,46 @@ public class EventServiceImpl implements EventService {
         long totalEvents = eventRepository.count();
         long activeEvents = eventRepository.countActiveEvents();
         long upcomingEvents = eventRepository.countUpcomingEvents();
-        long pastEvents = totalEvents - upcomingEvents;
-        long availableEvents = eventRepository.findAvailableEvents().size();
+        long pastEvents = eventRepository.countPastEvents();
+        long availableEvents = eventRepository.countAvailableEvents();
         
         return new EventStatistics(totalEvents, activeEvents, upcomingEvents, pastEvents, availableEvents);
     }
     
     @Override
     public EventDTO convertToDTO(Event event) {
-        EventDTO eventDTO = new EventDTO();
-        eventDTO.setId(event.getId());
-        eventDTO.setTitle(event.getTitle());
-        eventDTO.setDescription(event.getDescription());
-        eventDTO.setDate(event.getDate());
-        eventDTO.setTime(event.getTime());
-        eventDTO.setLocation(event.getLocation());
-        eventDTO.setPrice(event.getPrice());
-        eventDTO.setTotalSeats(event.getTotalSeats());
-        eventDTO.setAvailableSeats(event.getAvailableSeats());
-        eventDTO.setCategory(event.getCategory());
-        eventDTO.setImage(event.getImage());
-        eventDTO.setCreatedAt(event.getCreatedAt());
-        eventDTO.setUpdatedAt(event.getUpdatedAt());
-        eventDTO.setIsActive(event.getIsActive());
+        if (event == null) return null;
         
-        // Calculate average rating and review count
-        Double averageRating = reviewRepository.getAverageRatingByEventId(event.getId());
-        Long reviewCount = reviewRepository.getReviewCountByEventId(event.getId());
+        EventDTO dto = new EventDTO();
+        dto.setId(event.getId());
+        dto.setTitle(event.getTitle());
+        dto.setDescription(event.getDescription());
+        dto.setDate(event.getDate());
+        dto.setTime(event.getTime());
+        dto.setLocation(event.getLocation());
+        dto.setPrice(event.getPrice());
+        dto.setTotalSeats(event.getTotalSeats());
+        dto.setAvailableSeats(event.getAvailableSeats());
+        dto.setCategory(event.getCategory());
+        dto.setImage(event.getImage());
+        dto.setIsActive(event.getIsActive());
+        dto.setCreatedAt(event.getCreatedAt());
+        dto.setUpdatedAt(event.getUpdatedAt());
         
-        eventDTO.setAverageRating(averageRating != null ? averageRating : 0.0);
-        eventDTO.setTotalReviews(reviewCount != null ? reviewCount.intValue() : 0);
+        // Calculate average rating if reviews exist
+        if (reviewRepository != null) {
+            Double avgRating = reviewRepository.findAverageRatingByEventId(event.getId());
+            dto.setAverageRating(avgRating != null ? avgRating : 0.0);
+            dto.setReviewCount(reviewRepository.countByEventId(event.getId()));
+        }
         
-        return eventDTO;
+        return dto;
     }
     
     @Override
     public Event convertToEntity(EventDTO eventDTO) {
+        if (eventDTO == null) return null;
+        
         Event event = new Event();
         event.setId(eventDTO.getId());
         event.setTitle(eventDTO.getTitle());
@@ -248,6 +259,8 @@ public class EventServiceImpl implements EventService {
         event.setCategory(eventDTO.getCategory());
         event.setImage(eventDTO.getImage());
         event.setIsActive(eventDTO.getIsActive() != null ? eventDTO.getIsActive() : true);
+        event.setCreatedAt(eventDTO.getCreatedAt());
+        event.setUpdatedAt(eventDTO.getUpdatedAt());
         
         return event;
     }

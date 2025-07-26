@@ -1,163 +1,137 @@
 package com.eventhub.util;
 
 import com.eventhub.model.entity.Booking;
-import com.itextpdf.text.*;
-import com.itextpdf.text.pdf.PdfPCell;
-import com.itextpdf.text.pdf.PdfPTable;
-import com.itextpdf.text.pdf.PdfWriter;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 
 @Component
 public class PdfGenerator {
     
-    private static final Font TITLE_FONT = new Font(Font.FontFamily.HELVETICA, 18, Font.BOLD, BaseColor.BLUE);
-    private static final Font HEADER_FONT = new Font(Font.FontFamily.HELVETICA, 14, Font.BOLD);
-    private static final Font NORMAL_FONT = new Font(Font.FontFamily.HELVETICA, 12, Font.NORMAL);
-    private static final Font SMALL_FONT = new Font(Font.FontFamily.HELVETICA, 10, Font.NORMAL);
-    
-    public byte[] generateTicketPdf(Booking booking) throws DocumentException, IOException {
-        Document document = new Document();
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        
-        PdfWriter.getInstance(document, out);
-        document.open();
-        
-        // Header
-        addHeader(document);
-        
-        // Ticket Information
-        addTicketInfo(document, booking);
-        
-        // Event Details
-        addEventDetails(document, booking);
-        
-        // Booking Details
-        addBookingDetails(document, booking);
-        
-        // Important Information
-        addImportantInfo(document);
-        
-        // Footer
-        addFooter(document);
-        
-        document.close();
-        return out.toByteArray();
-    }
-    
-    private void addHeader(Document document) throws DocumentException {
-        Paragraph header = new Paragraph("🎫 EventHub", TITLE_FONT);
-        header.setAlignment(Element.ALIGN_CENTER);
-        header.setSpacingAfter(20);
-        document.add(header);
-        
-        // Add a line
-        Paragraph line = new Paragraph("_".repeat(60), NORMAL_FONT);
-        line.setAlignment(Element.ALIGN_CENTER);
-        document.add(line);
-        document.add(Chunk.NEWLINE);
-    }
-    
-    private void addTicketInfo(Document document, Booking booking) throws DocumentException {
-        Paragraph ticketTitle = new Paragraph("EVENT TICKET", HEADER_FONT);
-        ticketTitle.setAlignment(Element.ALIGN_CENTER);
-        ticketTitle.setSpacingAfter(10);
-        document.add(ticketTitle);
-        
-        Paragraph ticketId = new Paragraph("Ticket ID: " + booking.getTicketId(), NORMAL_FONT);
-        ticketId.setAlignment(Element.ALIGN_CENTER);
-        ticketId.setSpacingAfter(20);
-        document.add(ticketId);
-    }
-    
-    private void addEventDetails(Document document, Booking booking) throws DocumentException {
-        Paragraph eventHeader = new Paragraph("EVENT DETAILS", HEADER_FONT);
-        eventHeader.setSpacingAfter(10);
-        document.add(eventHeader);
-        
-        PdfPTable eventTable = new PdfPTable(2);
-        eventTable.setWidthPercentage(100);
-        eventTable.setSpacingAfter(20);
-        
-        addTableRow(eventTable, "Event:", booking.getEvent().getTitle());
-        addTableRow(eventTable, "Date:", booking.getEvent().getDate().format(DateTimeFormatter.ofPattern("dd MMM yyyy")));
-        addTableRow(eventTable, "Time:", booking.getEvent().getTime().format(DateTimeFormatter.ofPattern("hh:mm a")));
-        addTableRow(eventTable, "Location:", booking.getEvent().getLocation());
-        addTableRow(eventTable, "Category:", booking.getEvent().getCategory().toString());
-        
-        document.add(eventTable);
-    }
-    
-    private void addBookingDetails(Document document, Booking booking) throws DocumentException {
-        Paragraph bookingHeader = new Paragraph("BOOKING DETAILS", HEADER_FONT);
-        bookingHeader.setSpacingAfter(10);
-        document.add(bookingHeader);
-        
-        PdfPTable bookingTable = new PdfPTable(2);
-        bookingTable.setWidthPercentage(100);
-        bookingTable.setSpacingAfter(20);
-        
-        addTableRow(bookingTable, "Booked By:", booking.getUser().getName());
-        addTableRow(bookingTable, "Email:", booking.getUser().getEmail());
-        addTableRow(bookingTable, "Number of Tickets:", booking.getNumberOfTickets().toString());
-        addTableRow(bookingTable, "Total Amount:", "₹" + booking.getTotalAmount());
-        addTableRow(bookingTable, "Service Fee:", "₹" + booking.getServiceFee());
-        addTableRow(bookingTable, "Booking Date:", booking.getCreatedAt().format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a")));
-        addTableRow(bookingTable, "Status:", booking.getStatus().toString());
-        
-        document.add(bookingTable);
-    }
-    
-    private void addImportantInfo(Document document) throws DocumentException {
-        Paragraph importantHeader = new Paragraph("IMPORTANT INFORMATION", HEADER_FONT);
-        importantHeader.setSpacingAfter(10);
-        document.add(importantHeader);
-        
-        String[] importantPoints = {
-            "• Present this ticket at the venue entrance",
-            "• Arrive 30 minutes before event start time",
-            "• This ticket is non-transferable and non-refundable",
-            "• Keep this ticket safe and accessible",
-            "• Contact support for issues: support@eventhub.com"
-        };
-        
-        for (String point : importantPoints) {
-            Paragraph p = new Paragraph(point, SMALL_FONT);
-            p.setSpacingAfter(5);
-            document.add(p);
+    /**
+     * Generate ticket PDF for a booking (simplified version without external dependencies)
+     * @param booking The booking to generate ticket for
+     * @param qrCode QR code as byte array
+     * @return PDF as byte array (currently returns text content)
+     * @throws Exception if PDF generation fails
+     */
+    public byte[] generateTicket(Booking booking, byte[] qrCode) throws Exception {
+        try {
+            // For now, generate a simple text-based ticket
+            StringBuilder ticketContent = new StringBuilder();
+            ticketContent.append("=".repeat(50)).append("\n");
+            ticketContent.append("         EVENTHUB TICKET\n");
+            ticketContent.append("=".repeat(50)).append("\n\n");
+            
+            ticketContent.append("EVENT DETAILS:\n");
+            ticketContent.append("-".repeat(20)).append("\n");
+            ticketContent.append("Event: ").append(booking.getEvent().getTitle()).append("\n");
+            ticketContent.append("Date: ").append(booking.getEvent().getDate().format(DateTimeFormatter.ofPattern("dd MMM yyyy"))).append("\n");
+            ticketContent.append("Time: ").append(booking.getEvent().getTime().format(DateTimeFormatter.ofPattern("hh:mm a"))).append("\n");
+            ticketContent.append("Venue: ").append(booking.getEvent().getLocation()).append("\n");
+            ticketContent.append("Category: ").append(booking.getEvent().getCategory()).append("\n\n");
+            
+            ticketContent.append("BOOKING DETAILS:\n");
+            ticketContent.append("-".repeat(20)).append("\n");
+            ticketContent.append("Ticket ID: ").append(booking.getTicketId()).append("\n");
+            ticketContent.append("Tickets: ").append(booking.getNumberOfTickets()).append("\n");
+            ticketContent.append("Subtotal: ₹").append(booking.getTotalAmount().subtract(booking.getServiceFee())).append("\n");
+            ticketContent.append("Service Fee: ₹").append(booking.getServiceFee()).append("\n");
+            ticketContent.append("Total Amount: ₹").append(booking.getTotalAmount()).append("\n");
+            ticketContent.append("Status: ").append(booking.getStatus()).append("\n");
+            ticketContent.append("Booked On: ").append(booking.getCreatedAt().format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a"))).append("\n\n");
+            
+            ticketContent.append("CUSTOMER DETAILS:\n");
+            ticketContent.append("-".repeat(20)).append("\n");
+            ticketContent.append("Name: ").append(booking.getUser().getName()).append("\n");
+            ticketContent.append("Email: ").append(booking.getUser().getEmail()).append("\n");
+            if (booking.getUser().getPhone() != null) {
+                ticketContent.append("Phone: ").append(booking.getUser().getPhone()).append("\n");
+            }
+            ticketContent.append("\n");
+            
+            ticketContent.append("TERMS & CONDITIONS:\n");
+            ticketContent.append("-".repeat(20)).append("\n");
+            ticketContent.append("• This ticket is non-transferable and must be presented along with a valid ID.\n");
+            ticketContent.append("• Entry is subject to security checks and event organizer's terms.\n");
+            ticketContent.append("• No refunds will be provided unless the event is cancelled.\n");
+            ticketContent.append("• Please arrive at least 30 minutes before the event start time.\n");
+            ticketContent.append("• EventHub is not responsible for any loss, damage, or injury during the event.\n\n");
+            
+            ticketContent.append("For support: support@eventhub.com | +91-1234567890\n");
+            ticketContent.append("=".repeat(50)).append("\n");
+            
+            return ticketContent.toString().getBytes(StandardCharsets.UTF_8);
+            
+        } catch (Exception e) {
+            throw new Exception("Failed to generate ticket: " + e.getMessage(), e);
         }
-        
-        document.add(Chunk.NEWLINE);
     }
     
-    private void addFooter(Document document) throws DocumentException {
-        Paragraph footer = new Paragraph("🌐 EventHub - Your Gateway to Amazing Experiences", SMALL_FONT);
-        footer.setAlignment(Element.ALIGN_CENTER);
-        footer.setSpacingBefore(20);
-        document.add(footer);
-        
-        Paragraph contact = new Paragraph("📧 support@eventhub.com | 🌍 www.eventhub.com", SMALL_FONT);
-        contact.setAlignment(Element.ALIGN_CENTER);
-        document.add(contact);
-        
-        Paragraph generated = new Paragraph("Generated: " + java.time.LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a")), SMALL_FONT);
-        generated.setAlignment(Element.ALIGN_CENTER);
-        generated.setSpacingBefore(10);
-        document.add(generated);
+    /**
+     * Generate booking summary PDF (simplified version)
+     * @param booking The booking to generate summary for
+     * @return PDF as byte array (currently returns text content)
+     * @throws Exception if PDF generation fails
+     */
+    public byte[] generateBookingSummary(Booking booking) throws Exception {
+        try {
+            StringBuilder summary = new StringBuilder();
+            summary.append("BOOKING SUMMARY\n");
+            summary.append("=".repeat(30)).append("\n\n");
+            
+            summary.append("Booking ID: ").append(booking.getId()).append("\n");
+            summary.append("Ticket ID: ").append(booking.getTicketId()).append("\n");
+            summary.append("Event: ").append(booking.getEvent().getTitle()).append("\n");
+            summary.append("Customer: ").append(booking.getUser().getName()).append("\n");
+            summary.append("Email: ").append(booking.getUser().getEmail()).append("\n");
+            summary.append("Tickets: ").append(booking.getNumberOfTickets()).append("\n");
+            summary.append("Total Amount: ₹").append(booking.getTotalAmount()).append("\n");
+            summary.append("Status: ").append(booking.getStatus()).append("\n");
+            summary.append("Booking Date: ").append(booking.getCreatedAt().format(DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a"))).append("\n");
+            
+            return summary.toString().getBytes(StandardCharsets.UTF_8);
+            
+        } catch (Exception e) {
+            throw new Exception("Failed to generate booking summary: " + e.getMessage(), e);
+        }
     }
     
-    private void addTableRow(PdfPTable table, String label, String value) {
-        PdfPCell labelCell = new PdfPCell(new Phrase(label, NORMAL_FONT));
-        labelCell.setBorder(Rectangle.NO_BORDER);
-        labelCell.setPaddingBottom(8);
-        table.addCell(labelCell);
-        
-        PdfPCell valueCell = new PdfPCell(new Phrase(value, NORMAL_FONT));
-        valueCell.setBorder(Rectangle.NO_BORDER);
-        valueCell.setPaddingBottom(8);
-        table.addCell(valueCell);
+    /**
+     * Generate invoice PDF (simplified version)
+     * @param booking The booking to generate invoice for
+     * @return PDF as byte array (currently returns text content)
+     * @throws Exception if PDF generation fails
+     */
+    public byte[] generateInvoice(Booking booking) throws Exception {
+        try {
+            StringBuilder invoice = new StringBuilder();
+            invoice.append("EVENTHUB INVOICE\n");
+            invoice.append("=".repeat(30)).append("\n\n");
+            
+            invoice.append("Invoice Date: ").append(booking.getCreatedAt().format(DateTimeFormatter.ofPattern("dd MMM yyyy"))).append("\n");
+            invoice.append("Transaction ID: ").append(booking.getTicketId()).append("\n\n");
+            
+            invoice.append("BILLING INFORMATION:\n");
+            invoice.append("-".repeat(20)).append("\n");
+            invoice.append("Customer: ").append(booking.getUser().getName()).append("\n");
+            invoice.append("Email: ").append(booking.getUser().getEmail()).append("\n\n");
+            
+            invoice.append("ITEMS:\n");
+            invoice.append("-".repeat(20)).append("\n");
+            invoice.append("Description: ").append(booking.getEvent().getTitle()).append("\n");
+            invoice.append("Quantity: ").append(booking.getNumberOfTickets()).append("\n");
+            invoice.append("Rate: ₹").append(booking.getEvent().getPrice()).append("\n");
+            invoice.append("Amount: ₹").append(booking.getTotalAmount().subtract(booking.getServiceFee())).append("\n");
+            invoice.append("Service Fee: ₹").append(booking.getServiceFee()).append("\n");
+            invoice.append("TOTAL: ₹").append(booking.getTotalAmount()).append("\n");
+            
+            return invoice.toString().getBytes(StandardCharsets.UTF_8);
+            
+        } catch (Exception e) {
+            throw new Exception("Failed to generate invoice: " + e.getMessage(), e);
+        }
     }
 }

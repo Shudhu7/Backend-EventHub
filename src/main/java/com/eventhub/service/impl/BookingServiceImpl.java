@@ -60,7 +60,7 @@ public class BookingServiceImpl implements BookingService {
         Event event = eventRepository.findById(createBookingRequest.getEventId())
             .orElseThrow(() -> new RuntimeException("Event not found"));
         
-        // Check if event is active and has available seats
+        // Check if event is active and available
         if (!event.getIsActive()) {
             throw new RuntimeException("Event is not active");
         }
@@ -69,38 +69,41 @@ public class BookingServiceImpl implements BookingService {
             throw new RuntimeException("Not enough available seats");
         }
         
-        // Check if user already has a booking for this event
-        if (bookingRepository.existsByUserAndEvent(user, event)) {
-            throw new RuntimeException("You already have a booking for this event");
+        // Check if event date is in the future
+        if (event.getDate().isBefore(LocalDateTime.now().toLocalDate())) {
+            throw new RuntimeException("Cannot book past events");
         }
         
-        // Calculate amounts
-        ServiceFeeCalculator.ServiceFeeBreakdown breakdown = serviceFeeCalculator
-            .getServiceFeeBreakdown(event.getPrice(), createBookingRequest.getNumberOfTickets());
+        // Calculate fees
+        BigDecimal subtotal = event.getPrice().multiply(new BigDecimal(createBookingRequest.getNumberOfTickets()));
+        BigDecimal serviceFee = serviceFeeCalculator.calculateServiceFee(subtotal);
+        BigDecimal totalAmount = subtotal.add(serviceFee);
         
         // Create booking
         Booking booking = new Booking();
         booking.setTicketId(generateTicketId());
         booking.setUser(user);
         booking.setEvent(event);
-        booking.setNumberOfTickets(createBookingRequest.getNumberOfTickets());
-        booking.setTotalAmount(breakdown.getTotalAmount());
-        booking.setServiceFee(breakdown.getServiceFee());
+        booking.setNumberOfTickets(createBookingRequest.getNumberOfTickets()); // Using numberOfTickets
+        booking.setTotalAmount(totalAmount); // This includes subtotal + serviceFee
+        booking.setServiceFee(serviceFee);
         booking.setStatus(Booking.BookingStatus.PENDING);
-        
-        // Save booking
-        Booking savedBooking = bookingRepository.save(booking);
+        booking.setCreatedAt(LocalDateTime.now());
+        booking.setUpdatedAt(LocalDateTime.now());
         
         // Update available seats
         event.setAvailableSeats(event.getAvailableSeats() - createBookingRequest.getNumberOfTickets());
         eventRepository.save(event);
+        
+        // Save booking
+        Booking savedBooking = bookingRepository.save(booking);
         
         return convertToDTO(savedBooking);
     }
     
     @Override
     public BookingDTO getBookingById(Long id) {
-        Booking booking = bookingRepository.findByIdWithEventAndUser(id)
+        Booking booking = bookingRepository.findById(id)
             .orElseThrow(() -> new RuntimeException("Booking not found with id: " + id));
         return convertToDTO(booking);
     }
@@ -118,7 +121,7 @@ public class BookingServiceImpl implements BookingService {
         User user = userRepository.findByEmail(authentication.getName())
             .orElseThrow(() -> new RuntimeException("User not found"));
         
-        List<Booking> bookings = bookingRepository.findByUserIdWithEventAndUser(user.getId());
+        List<Booking> bookings = bookingRepository.findByUserOrderByCreatedAtDesc(user);
         return bookings.stream()
             .map(this::convertToDTO)
             .collect(Collectors.toList());
@@ -130,13 +133,16 @@ public class BookingServiceImpl implements BookingService {
         User user = userRepository.findByEmail(authentication.getName())
             .orElseThrow(() -> new RuntimeException("User not found"));
         
-        Page<Booking> bookings = bookingRepository.findByUser(user, pageable);
+        Page<Booking> bookings = bookingRepository.findByUserOrderByCreatedAtDesc(user, pageable);
         return bookings.map(this::convertToDTO);
     }
     
     @Override
     public List<BookingDTO> getBookingsByUserId(Long userId) {
-        List<Booking> bookings = bookingRepository.findByUserIdWithEventAndUser(userId);
+        User user = userRepository.findById(userId)
+            .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
+        
+        List<Booking> bookings = bookingRepository.findByUserOrderByCreatedAtDesc(user);
         return bookings.stream()
             .map(this::convertToDTO)
             .collect(Collectors.toList());
@@ -144,7 +150,10 @@ public class BookingServiceImpl implements BookingService {
     
     @Override
     public List<BookingDTO> getBookingsByEventId(Long eventId) {
-        List<Booking> bookings = bookingRepository.findByEventIdOrderByCreatedAtDesc(eventId);
+        Event event = eventRepository.findById(eventId)
+            .orElseThrow(() -> new RuntimeException("Event not found with id: " + eventId));
+        
+        List<Booking> bookings = bookingRepository.findByEventOrderByCreatedAtDesc(event);
         return bookings.stream()
             .map(this::convertToDTO)
             .collect(Collectors.toList());
@@ -152,7 +161,7 @@ public class BookingServiceImpl implements BookingService {
     
     @Override
     public List<BookingDTO> getAllBookings() {
-        List<Booking> bookings = bookingRepository.findAll();
+        List<Booking> bookings = bookingRepository.findAllByOrderByCreatedAtDesc();
         return bookings.stream()
             .map(this::convertToDTO)
             .collect(Collectors.toList());
@@ -160,13 +169,13 @@ public class BookingServiceImpl implements BookingService {
     
     @Override
     public Page<BookingDTO> getAllBookings(Pageable pageable) {
-        Page<Booking> bookings = bookingRepository.findAll(pageable);
+        Page<Booking> bookings = bookingRepository.findAllByOrderByCreatedAtDesc(pageable);
         return bookings.map(this::convertToDTO);
     }
     
     @Override
     public List<BookingDTO> getBookingsByStatus(Booking.BookingStatus status) {
-        List<Booking> bookings = bookingRepository.findByStatus(status);
+        List<Booking> bookings = bookingRepository.findByStatusOrderByCreatedAtDesc(status);
         return bookings.stream()
             .map(this::convertToDTO)
             .collect(Collectors.toList());
@@ -174,87 +183,57 @@ public class BookingServiceImpl implements BookingService {
     
     @Override
     public List<BookingDTO> getBookingsByDateRange(LocalDateTime startDate, LocalDateTime endDate) {
-        List<Booking> bookings = bookingRepository.findBookingsCreatedBetween(startDate, endDate);
+        List<Booking> bookings = bookingRepository.findByCreatedAtBetweenOrderByCreatedAtDesc(startDate, endDate);
         return bookings.stream()
             .map(this::convertToDTO)
             .collect(Collectors.toList());
     }
     
     @Override
-    public BookingDTO cancelBooking(Long bookingId) {
-        Booking booking = bookingRepository.findByIdWithEventAndUser(bookingId)
-            .orElseThrow(() -> new RuntimeException("Booking not found"));
+    public BookingDTO updateBookingStatus(Long id, Booking.BookingStatus status) {
+        Booking booking = bookingRepository.findById(id)
+            .orElseThrow(() -> new RuntimeException("Booking not found with id: " + id));
         
-        // Check if booking can be cancelled
-        if (booking.getStatus() == Booking.BookingStatus.CANCELLED) {
-            throw new RuntimeException("Booking is already cancelled");
-        }
-        
-        if (booking.getStatus() == Booking.BookingStatus.COMPLETED) {
-            throw new RuntimeException("Cannot cancel completed booking");
-        }
-        
-        // Update booking status
-        booking.setStatus(Booking.BookingStatus.CANCELLED);
-        Booking updatedBooking = bookingRepository.save(booking);
-        
-        // Restore available seats
-        Event event = booking.getEvent();
-        event.setAvailableSeats(event.getAvailableSeats() + booking.getNumberOfTickets());
-        eventRepository.save(event);
-        
-        return convertToDTO(updatedBooking);
-    }
-    
-    @Override
-    public BookingDTO confirmBooking(Long bookingId) {
-        Booking booking = bookingRepository.findById(bookingId)
-            .orElseThrow(() -> new RuntimeException("Booking not found"));
-        
-        booking.setStatus(Booking.BookingStatus.CONFIRMED);
-        Booking updatedBooking = bookingRepository.save(booking);
-        
-        return convertToDTO(updatedBooking);
-    }
-    
-    @Override
-    public BookingDTO updateBookingStatus(Long bookingId, Booking.BookingStatus status) {
-        Booking booking = bookingRepository.findById(bookingId)
-            .orElseThrow(() -> new RuntimeException("Booking not found"));
-        
+        Booking.BookingStatus oldStatus = booking.getStatus();
         booking.setStatus(status);
-        Booking updatedBooking = bookingRepository.save(booking);
+        booking.setUpdatedAt(LocalDateTime.now());
         
+        // Handle seat availability when status changes
+        if (oldStatus == Booking.BookingStatus.CONFIRMED && status == Booking.BookingStatus.CANCELLED) {
+            // Release seats back to event
+            Event event = booking.getEvent();
+            event.setAvailableSeats(event.getAvailableSeats() + booking.getNumberOfTickets());
+            eventRepository.save(event);
+        }
+        
+        Booking updatedBooking = bookingRepository.save(booking);
         return convertToDTO(updatedBooking);
     }
     
     @Override
-    public byte[] generateTicketPdf(Long bookingId) {
-        try {
-            Booking booking = bookingRepository.findByIdWithEventAndUser(bookingId)
-                .orElseThrow(() -> new RuntimeException("Booking not found"));
-            
-            return pdfGenerator.generateTicketPdf(booking);
-        } catch (Exception e) {
-            throw new RuntimeException("Error generating PDF ticket: " + e.getMessage());
-        }
+    public BookingDTO confirmBooking(Long id) {
+        return updateBookingStatus(id, Booking.BookingStatus.CONFIRMED);
     }
     
     @Override
-    public byte[] generateTicketQRCode(String ticketId) {
-        try {
-            return qrCodeUtil.generateTicketQRCode(ticketId);
-        } catch (Exception e) {
-            throw new RuntimeException("Error generating QR code: " + e.getMessage());
+    public BookingDTO cancelBooking(Long id) {
+        Booking booking = bookingRepository.findById(id)
+            .orElseThrow(() -> new RuntimeException("Booking not found with id: " + id));
+        
+        // Check if booking can be cancelled (e.g., not past event date)
+        if (booking.getEvent().getDate().isBefore(LocalDateTime.now().toLocalDate())) {
+            throw new RuntimeException("Cannot cancel booking for past events");
         }
+        
+        return updateBookingStatus(id, Booking.BookingStatus.CANCELLED);
     }
     
     @Override
     public BookingStatistics getBookingStatistics() {
         long totalBookings = bookingRepository.count();
-        long confirmedBookings = bookingRepository.getConfirmedBookingsCount();
-        long pendingBookings = bookingRepository.getPendingBookingsCount();
-        long cancelledBookings = bookingRepository.getCancelledBookingsCount();
+        long confirmedBookings = bookingRepository.countByStatus(Booking.BookingStatus.CONFIRMED);
+        long pendingBookings = bookingRepository.countByStatus(Booking.BookingStatus.PENDING);
+        long cancelledBookings = bookingRepository.countByStatus(Booking.BookingStatus.CANCELLED);
         
         BigDecimal totalRevenue = bookingRepository.getTotalRevenue();
         BigDecimal totalServiceFees = bookingRepository.getTotalServiceFees();
@@ -262,73 +241,90 @@ public class BookingServiceImpl implements BookingService {
         if (totalRevenue == null) totalRevenue = BigDecimal.ZERO;
         if (totalServiceFees == null) totalServiceFees = BigDecimal.ZERO;
         
-        return new BookingStatistics(totalBookings, confirmedBookings, pendingBookings,
+        return new BookingStatistics(totalBookings, confirmedBookings, pendingBookings, 
             cancelledBookings, totalRevenue, totalServiceFees);
     }
     
     @Override
-    public BigDecimal calculateTotalAmount(Long eventId, Integer numberOfTickets) {
-        Event event = eventRepository.findById(eventId)
-            .orElseThrow(() -> new RuntimeException("Event not found"));
+    public byte[] generateTicketPdf(Long bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+            .orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
         
-        return serviceFeeCalculator.calculateTotalAmount(event.getPrice(), numberOfTickets);
-    }
-    
-    @Override
-    public String generateTicketId() {
-        String ticketId;
-        do {
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-            String randomPart = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-            ticketId = "TKT-" + timestamp + "-" + randomPart;
-        } while (bookingRepository.existsByTicketId(ticketId));
-        
-        return ticketId;
-    }
-    
-    @Override
-    public BookingDTO convertToDTO(Booking booking) {
-        BookingDTO bookingDTO = new BookingDTO();
-        bookingDTO.setId(booking.getId());
-        bookingDTO.setTicketId(booking.getTicketId());
-        bookingDTO.setEventId(booking.getEvent().getId());
-        bookingDTO.setNumberOfTickets(booking.getNumberOfTickets());
-        bookingDTO.setTotalAmount(booking.getTotalAmount());
-        bookingDTO.setServiceFee(booking.getServiceFee());
-        bookingDTO.setStatus(booking.getStatus());
-        bookingDTO.setCreatedAt(booking.getCreatedAt());
-        bookingDTO.setUpdatedAt(booking.getUpdatedAt());
-        
-        // Event details
-        bookingDTO.setEventTitle(booking.getEvent().getTitle());
-        bookingDTO.setEventLocation(booking.getEvent().getLocation());
-        bookingDTO.setEventImage(booking.getEvent().getImage());
-        bookingDTO.setEventCategory(booking.getEvent().getCategory().toString());
-        
-        // User details
-        bookingDTO.setUserName(booking.getUser().getName());
-        bookingDTO.setUserEmail(booking.getUser().getEmail());
-        
-        // Payment details (if payment exists)
-        if (booking.getPayment() != null) {
-            bookingDTO.setTransactionId(booking.getPayment().getTransactionId());
-            bookingDTO.setPaymentMethod(booking.getPayment().getPaymentMethod());
-            bookingDTO.setPaymentStatus(booking.getPayment().getStatus());
+        if (booking.getStatus() != Booking.BookingStatus.CONFIRMED) {
+            throw new RuntimeException("Ticket can only be generated for confirmed bookings");
         }
         
-        return bookingDTO;
+        try {
+            // Generate QR code for ticket
+            String qrData = generateQrCodeData(booking);
+            byte[] qrCode = qrCodeUtil.generateQrCode(qrData);
+            
+            // Generate PDF ticket
+            return pdfGenerator.generateTicket(booking, qrCode);
+        } catch (Exception e) {
+            throw new RuntimeException("Error generating ticket PDF: " + e.getMessage());
+        }
     }
     
     @Override
-    public Booking convertToEntity(BookingDTO bookingDTO) {
-        Booking booking = new Booking();
-        booking.setId(bookingDTO.getId());
-        booking.setTicketId(bookingDTO.getTicketId());
-        booking.setNumberOfTickets(bookingDTO.getNumberOfTickets());
-        booking.setTotalAmount(bookingDTO.getTotalAmount());
-        booking.setServiceFee(bookingDTO.getServiceFee());
-        booking.setStatus(bookingDTO.getStatus());
+    public void deleteBooking(Long id) {
+        Booking booking = bookingRepository.findById(id)
+            .orElseThrow(() -> new RuntimeException("Booking not found with id: " + id));
         
-        return booking;
+        // Only allow deletion of pending or cancelled bookings
+        if (booking.getStatus() == Booking.BookingStatus.CONFIRMED) {
+            throw new RuntimeException("Cannot delete confirmed booking. Cancel it first.");
+        }
+        
+        // If pending, release the seats
+        if (booking.getStatus() == Booking.BookingStatus.PENDING) {
+            Event event = booking.getEvent();
+            event.setAvailableSeats(event.getAvailableSeats() + booking.getNumberOfTickets());
+            eventRepository.save(event);
+        }
+        
+        bookingRepository.delete(booking);
     }
+    
+    // Helper methods
+    private String generateTicketId() {
+        return "TKT-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    }
+    
+    private String generateQrCodeData(Booking booking) {
+        return String.format("TICKET:%s|EVENT:%d|USER:%d|TICKETS:%d|DATE:%s",
+            booking.getTicketId(),
+            booking.getEvent().getId(),
+            booking.getUser().getId(),
+            booking.getNumberOfTickets(), // Using correct field name
+            booking.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        );
+    }
+    
+    private BookingDTO convertToDTO(Booking booking) {
+        if (booking == null) return null;
+        
+        BookingDTO dto = new BookingDTO();
+        dto.setId(booking.getId());
+        dto.setTicketId(booking.getTicketId());
+        dto.setUserId(booking.getUser().getId());
+        dto.setUserName(booking.getUser().getName());
+        dto.setUserEmail(booking.getUser().getEmail());
+        dto.setEventId(booking.getEvent().getId());
+        dto.setEventTitle(booking.getEvent().getTitle());
+        dto.setEventDate(booking.getEvent().getDate());
+        dto.setEventTime(booking.getEvent().getTime());
+        dto.setEventLocation(booking.getEvent().getLocation());
+        dto.setNumberOfSeats(booking.getNumberOfTickets()); // Using correct field name
+        dto.setSubtotal(booking.getTotalAmount().subtract(booking.getServiceFee())); // Calculate subtotal
+        dto.setServiceFee(booking.getServiceFee());
+        dto.setTotalAmount(booking.getTotalAmount());
+        dto.setStatus(booking.getStatus());
+        dto.setCreatedAt(booking.getCreatedAt());
+        dto.setUpdatedAt(booking.getUpdatedAt());
+        
+        return dto;
+    }
+    
+
 }

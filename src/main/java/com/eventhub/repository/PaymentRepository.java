@@ -23,10 +23,19 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     
     List<Payment> findByPaymentMethod(Payment.PaymentMethod paymentMethod);
     
+    // Added missing methods that were causing the constructor exception
+    List<Payment> findAllByOrderByCreatedAtDesc();
+    
+    List<Payment> findByStatusOrderByCreatedAtDesc(Payment.PaymentStatus status);
+    
+    List<Payment> findByPaymentMethodOrderByCreatedAtDesc(Payment.PaymentMethod paymentMethod);
+    
+    List<Payment> findByCreatedAtBetweenOrderByCreatedAtDesc(LocalDateTime startDate, LocalDateTime endDate);
+    
     @Query("SELECT p FROM Payment p WHERE p.booking.user.id = :userId ORDER BY p.createdAt DESC")
     List<Payment> findByUserIdOrderByCreatedAtDesc(@Param("userId") Long userId);
     
-    @Query("SELECT p FROM Payment p WHERE p.createdAt BETWEEN :startDate AND :endDate")
+    @Query("SELECT p FROM Payment p WHERE p.createdAt BETWEEN :startDate AND :endDate ORDER BY p.createdAt DESC")
     List<Payment> findPaymentsCreatedBetween(@Param("startDate") LocalDateTime startDate, 
                                            @Param("endDate") LocalDateTime endDate);
     
@@ -37,6 +46,11 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
            "p.createdAt BETWEEN :startDate AND :endDate")
     BigDecimal getSuccessfulPaymentsByDateRange(@Param("startDate") LocalDateTime startDate, 
                                               @Param("endDate") LocalDateTime endDate);
+    
+    // Count methods for statistics
+    Long countByStatus(Payment.PaymentStatus status);
+    
+    Long countByPaymentMethod(Payment.PaymentMethod paymentMethod);
     
     @Query("SELECT COUNT(p) FROM Payment p WHERE p.status = 'SUCCESS'")
     Long getSuccessfulPaymentsCount();
@@ -49,6 +63,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     
     @Query("SELECT COUNT(p) FROM Payment p WHERE p.status = 'REFUNDED'")
     Long getRefundedPaymentsCount();
+    
+    @Query("SELECT SUM(p.amount) FROM Payment p WHERE p.paymentMethod = :method AND p.status = 'SUCCESS'")
+    BigDecimal getTotalAmountByPaymentMethod(@Param("method") Payment.PaymentMethod method);
     
     @Query("SELECT p.paymentMethod, COUNT(p) FROM Payment p WHERE p.status = 'SUCCESS' GROUP BY p.paymentMethod")
     List<Object[]> getPaymentMethodStatistics();

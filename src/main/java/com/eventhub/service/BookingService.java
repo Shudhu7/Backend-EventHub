@@ -68,29 +68,19 @@ public interface BookingService {
     List<BookingDTO> getBookingsByDateRange(LocalDateTime startDate, LocalDateTime endDate);
     
     /**
-     * Cancel booking
-     */
-    BookingDTO cancelBooking(Long bookingId);
-    
-    /**
-     * Confirm booking (after successful payment)
-     */
-    BookingDTO confirmBooking(Long bookingId);
-    
-    /**
      * Update booking status
      */
-    BookingDTO updateBookingStatus(Long bookingId, Booking.BookingStatus status);
+    BookingDTO updateBookingStatus(Long id, Booking.BookingStatus status);
     
     /**
-     * Generate ticket PDF
+     * Confirm booking
      */
-    byte[] generateTicketPdf(Long bookingId);
+    BookingDTO confirmBooking(Long id);
     
     /**
-     * Generate QR code for ticket
+     * Cancel booking
      */
-    byte[] generateTicketQRCode(String ticketId);
+    BookingDTO cancelBooking(Long id);
     
     /**
      * Get booking statistics (Admin only)
@@ -98,24 +88,14 @@ public interface BookingService {
     BookingStatistics getBookingStatistics();
     
     /**
-     * Calculate total amount including service fee
+     * Generate ticket PDF
      */
-    BigDecimal calculateTotalAmount(Long eventId, Integer numberOfTickets);
+    byte[] generateTicketPdf(Long bookingId);
     
     /**
-     * Generate unique ticket ID
+     * Delete booking
      */
-    String generateTicketId();
-    
-    /**
-     * Convert entity to DTO
-     */
-    BookingDTO convertToDTO(Booking booking);
-    
-    /**
-     * Convert DTO to entity
-     */
-    Booking convertToEntity(BookingDTO bookingDTO);
+    void deleteBooking(Long id);
     
     /**
      * Inner class for booking statistics
@@ -128,7 +108,6 @@ public interface BookingService {
         private BigDecimal totalRevenue;
         private BigDecimal totalServiceFees;
         
-        // Constructors
         public BookingStatistics() {}
         
         public BookingStatistics(long totalBookings, long confirmedBookings, long pendingBookings,

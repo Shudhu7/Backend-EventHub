@@ -92,11 +92,6 @@ public interface PaymentService {
     PaymentResponse processNetBankingPayment(PaymentRequest paymentRequest);
     
     /**
-     * Convert entity to response DTO
-     */
-    PaymentResponse convertToResponse(Payment payment);
-    
-    /**
      * Inner class for payment statistics
      */
     class PaymentStatistics {
@@ -109,7 +104,6 @@ public interface PaymentService {
         private BigDecimal successfulAmount;
         private List<PaymentMethodStats> methodStats;
         
-        // Constructors
         public PaymentStatistics() {}
         
         public PaymentStatistics(long totalPayments, long successfulPayments, long failedPayments,
@@ -120,8 +114,8 @@ public interface PaymentService {
             this.failedPayments = failedPayments;
             this.pendingPayments = pendingPayments;
             this.refundedPayments = refundedPayments;
-            this.totalAmount = totalAmount;
-            this.successfulAmount = successfulAmount;
+            this.totalAmount = totalAmount != null ? totalAmount : BigDecimal.ZERO;
+            this.successfulAmount = successfulAmount != null ? successfulAmount : BigDecimal.ZERO;
             this.methodStats = methodStats;
         }
         
@@ -157,14 +151,14 @@ public interface PaymentService {
     class PaymentMethodStats {
         private Payment.PaymentMethod method;
         private long count;
-        private BigDecimal amount;
+        private BigDecimal totalAmount;
         
         public PaymentMethodStats() {}
         
-        public PaymentMethodStats(Payment.PaymentMethod method, long count, BigDecimal amount) {
+        public PaymentMethodStats(Payment.PaymentMethod method, long count, BigDecimal totalAmount) {
             this.method = method;
             this.count = count;
-            this.amount = amount;
+            this.totalAmount = totalAmount != null ? totalAmount : BigDecimal.ZERO;
         }
         
         // Getters and Setters
@@ -174,7 +168,7 @@ public interface PaymentService {
         public long getCount() { return count; }
         public void setCount(long count) { this.count = count; }
         
-        public BigDecimal getAmount() { return amount; }
-        public void setAmount(BigDecimal amount) { this.amount = amount; }
+        public BigDecimal getTotalAmount() { return totalAmount; }
+        public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
     }
 }

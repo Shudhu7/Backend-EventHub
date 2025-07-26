@@ -15,7 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -40,6 +39,16 @@ public class PaymentServiceImpl implements PaymentService {
             throw new RuntimeException("Payment already exists for this booking");
         }
         
+        // Validate booking status
+        if (booking.getStatus() != Booking.BookingStatus.PENDING) {
+            throw new RuntimeException("Payment can only be processed for pending bookings");
+        }
+        
+        // Validate payment amount
+        if (paymentRequest.getAmount().compareTo(booking.getTotalAmount()) != 0) {
+            throw new RuntimeException("Payment amount does not match booking total");
+        }
+        
         // Create payment entity
         Payment payment = new Payment();
         payment.setTransactionId(generateTransactionId());
@@ -47,6 +56,8 @@ public class PaymentServiceImpl implements PaymentService {
         payment.setAmount(paymentRequest.getAmount());
         payment.setPaymentMethod(paymentRequest.getPaymentMethod());
         payment.setStatus(Payment.PaymentStatus.PENDING);
+        payment.setCreatedAt(LocalDateTime.now());
+        payment.setUpdatedAt(LocalDateTime.now());
         
         // Process payment based on method
         Payment processedPayment;
@@ -70,6 +81,7 @@ public class PaymentServiceImpl implements PaymentService {
         // Update booking status if payment successful
         if (processedPayment.getStatus() == Payment.PaymentStatus.SUCCESS) {
             booking.setStatus(Booking.BookingStatus.CONFIRMED);
+            booking.setUpdatedAt(LocalDateTime.now());
             bookingRepository.save(booking);
         }
         
@@ -104,7 +116,7 @@ public class PaymentServiceImpl implements PaymentService {
     
     @Override
     public List<PaymentResponse> getAllPayments() {
-        List<Payment> payments = paymentRepository.findAll();
+        List<Payment> payments = paymentRepository.findAllByOrderByCreatedAtDesc();
         return payments.stream()
             .map(this::convertToResponse)
             .collect(Collectors.toList());
@@ -112,7 +124,7 @@ public class PaymentServiceImpl implements PaymentService {
     
     @Override
     public List<PaymentResponse> getPaymentsByStatus(Payment.PaymentStatus status) {
-        List<Payment> payments = paymentRepository.findByStatus(status);
+        List<Payment> payments = paymentRepository.findByStatusOrderByCreatedAtDesc(status);
         return payments.stream()
             .map(this::convertToResponse)
             .collect(Collectors.toList());
@@ -120,7 +132,7 @@ public class PaymentServiceImpl implements PaymentService {
     
     @Override
     public List<PaymentResponse> getPaymentsByPaymentMethod(Payment.PaymentMethod paymentMethod) {
-        List<Payment> payments = paymentRepository.findByPaymentMethod(paymentMethod);
+        List<Payment> payments = paymentRepository.findByPaymentMethodOrderByCreatedAtDesc(paymentMethod);
         return payments.stream()
             .map(this::convertToResponse)
             .collect(Collectors.toList());
@@ -128,7 +140,7 @@ public class PaymentServiceImpl implements PaymentService {
     
     @Override
     public List<PaymentResponse> getPaymentsByDateRange(LocalDateTime startDate, LocalDateTime endDate) {
-        List<Payment> payments = paymentRepository.findPaymentsCreatedBetween(startDate, endDate);
+        List<Payment> payments = paymentRepository.findByCreatedAtBetweenOrderByCreatedAtDesc(startDate, endDate);
         return payments.stream()
             .map(this::convertToResponse)
             .collect(Collectors.toList());
@@ -136,38 +148,37 @@ public class PaymentServiceImpl implements PaymentService {
     
     @Override
     public PaymentResponse processRefund(RefundRequest refundRequest) {
-        Payment originalPayment = paymentRepository.findByTransactionId(refundRequest.getTransactionId())
+        Payment payment = paymentRepository.findByTransactionId(refundRequest.getTransactionId())
             .orElseThrow(() -> new RuntimeException("Payment not found"));
         
-        if (originalPayment.getStatus() != Payment.PaymentStatus.SUCCESS) {
+        // Validate refund conditions
+        if (payment.getStatus() != Payment.PaymentStatus.SUCCESS) {
             throw new RuntimeException("Can only refund successful payments");
         }
         
-        if (refundRequest.getRefundAmount().compareTo(originalPayment.getAmount()) > 0) {
-            throw new RuntimeException("Refund amount cannot exceed original payment amount");
+        if (payment.getAmount().compareTo(refundRequest.getRefundAmount()) < 0) {
+            throw new RuntimeException("Refund amount cannot exceed payment amount");
         }
         
-        // Create refund payment entry
-        Payment refundPayment = new Payment();
-        refundPayment.setTransactionId(generateTransactionId());
-        refundPayment.setBooking(originalPayment.getBooking());
-        refundPayment.setAmount(refundRequest.getRefundAmount().negate()); // Negative amount for refund
-        refundPayment.setPaymentMethod(originalPayment.getPaymentMethod());
-        refundPayment.setStatus(Payment.PaymentStatus.REFUNDED);
-        refundPayment.setPaymentGatewayResponse("Refund processed: " + refundRequest.getReason());
-        
-        Payment savedRefund = paymentRepository.save(refundPayment);
-        
-        // Update original payment status
-        originalPayment.setStatus(Payment.PaymentStatus.REFUNDED);
-        paymentRepository.save(originalPayment);
-        
-        // Update booking status
-        Booking booking = originalPayment.getBooking();
-        booking.setStatus(Booking.BookingStatus.CANCELLED);
-        bookingRepository.save(booking);
-        
-        return convertToResponse(savedRefund);
+        // Process refund
+        try {
+            // In real implementation, this would call the payment gateway's refund API
+            payment.setStatus(Payment.PaymentStatus.REFUNDED);
+            payment.setPaymentGatewayResponse("Refund processed successfully");
+            payment.setUpdatedAt(LocalDateTime.now());
+            
+            // Update booking status
+            Booking booking = payment.getBooking();
+            booking.setStatus(Booking.BookingStatus.CANCELLED);
+            booking.setUpdatedAt(LocalDateTime.now());
+            bookingRepository.save(booking);
+            
+            Payment updatedPayment = paymentRepository.save(payment);
+            return convertToResponse(updatedPayment);
+            
+        } catch (Exception e) {
+            throw new RuntimeException("Refund processing failed: " + e.getMessage());
+        }
     }
     
     @Override
@@ -185,6 +196,7 @@ public class PaymentServiceImpl implements PaymentService {
             .orElseThrow(() -> new RuntimeException("Payment not found"));
         
         payment.setStatus(status);
+        payment.setUpdatedAt(LocalDateTime.now());
         Payment updatedPayment = paymentRepository.save(payment);
         
         return convertToResponse(updatedPayment);
@@ -193,10 +205,10 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     public PaymentStatistics getPaymentStatistics() {
         long totalPayments = paymentRepository.count();
-        long successfulPayments = paymentRepository.getSuccessfulPaymentsCount();
-        long failedPayments = paymentRepository.getFailedPaymentsCount();
-        long pendingPayments = paymentRepository.getPendingPaymentsCount();
-        long refundedPayments = paymentRepository.getRefundedPaymentsCount();
+        long successfulPayments = paymentRepository.countByStatus(Payment.PaymentStatus.SUCCESS);
+        long failedPayments = paymentRepository.countByStatus(Payment.PaymentStatus.FAILED);
+        long pendingPayments = paymentRepository.countByStatus(Payment.PaymentStatus.PENDING);
+        long refundedPayments = paymentRepository.countByStatus(Payment.PaymentStatus.REFUNDED);
         
         BigDecimal totalAmount = paymentRepository.getTotalSuccessfulPayments();
         BigDecimal successfulAmount = totalAmount; // Same as total for successful payments
@@ -205,10 +217,20 @@ public class PaymentServiceImpl implements PaymentService {
         if (successfulAmount == null) successfulAmount = BigDecimal.ZERO;
         
         // Get payment method statistics
-        List<Object[]> methodStatsData = paymentRepository.getPaymentMethodStatistics();
-        List<PaymentMethodStats> methodStats = methodStatsData.stream()
-            .map(data -> new PaymentMethodStats((Payment.PaymentMethod) data[0], (Long) data[1], BigDecimal.ZERO))
-            .collect(Collectors.toList());
+        List<PaymentMethodStats> methodStats = List.of(
+            new PaymentMethodStats(Payment.PaymentMethod.CARD, 
+                paymentRepository.countByPaymentMethod(Payment.PaymentMethod.CARD), 
+                paymentRepository.getTotalAmountByPaymentMethod(Payment.PaymentMethod.CARD)),
+            new PaymentMethodStats(Payment.PaymentMethod.UPI, 
+                paymentRepository.countByPaymentMethod(Payment.PaymentMethod.UPI), 
+                paymentRepository.getTotalAmountByPaymentMethod(Payment.PaymentMethod.UPI)),
+            new PaymentMethodStats(Payment.PaymentMethod.NET_BANKING, 
+                paymentRepository.countByPaymentMethod(Payment.PaymentMethod.NET_BANKING), 
+                paymentRepository.getTotalAmountByPaymentMethod(Payment.PaymentMethod.NET_BANKING)),
+            new PaymentMethodStats(Payment.PaymentMethod.WALLET, 
+                paymentRepository.countByPaymentMethod(Payment.PaymentMethod.WALLET), 
+                paymentRepository.getTotalAmountByPaymentMethod(Payment.PaymentMethod.WALLET))
+        );
         
         return new PaymentStatistics(totalPayments, successfulPayments, failedPayments,
             pendingPayments, refundedPayments, totalAmount, successfulAmount, methodStats);
@@ -242,6 +264,12 @@ public class PaymentServiceImpl implements PaymentService {
             if (request.getCardNumber() == null || request.getCardNumber().length() < 16) {
                 payment.setStatus(Payment.PaymentStatus.FAILED);
                 payment.setPaymentGatewayResponse("Invalid card number");
+            } else if (request.getExpiryDate() == null) {
+                payment.setStatus(Payment.PaymentStatus.FAILED);
+                payment.setPaymentGatewayResponse("Invalid expiry date");
+            } else if (request.getCvv() == null || request.getCvv().length() != 3) {
+                payment.setStatus(Payment.PaymentStatus.FAILED);
+                payment.setPaymentGatewayResponse("Invalid CVV");
             } else {
                 // Simulate successful payment
                 payment.setStatus(Payment.PaymentStatus.SUCCESS);
@@ -252,6 +280,7 @@ public class PaymentServiceImpl implements PaymentService {
             payment.setPaymentGatewayResponse("Card payment failed: " + e.getMessage());
         }
         
+        payment.setUpdatedAt(LocalDateTime.now());
         return paymentRepository.save(payment);
     }
     
@@ -270,15 +299,16 @@ public class PaymentServiceImpl implements PaymentService {
             payment.setPaymentGatewayResponse("UPI payment failed: " + e.getMessage());
         }
         
+        payment.setUpdatedAt(LocalDateTime.now());
         return paymentRepository.save(payment);
     }
     
     private Payment processNetBankingPaymentInternal(Payment payment, PaymentRequest request) {
         // Simulate net banking payment processing
         try {
-            if (request.getBankCode() == null) {
+            if (request.getBankCode() == null || request.getBankCode().isEmpty()) {
                 payment.setStatus(Payment.PaymentStatus.FAILED);
-                payment.setPaymentGatewayResponse("Bank code required");
+                payment.setPaymentGatewayResponse("Invalid bank code");
             } else {
                 payment.setStatus(Payment.PaymentStatus.SUCCESS);
                 payment.setPaymentGatewayResponse("Net banking payment successful");
@@ -288,51 +318,45 @@ public class PaymentServiceImpl implements PaymentService {
             payment.setPaymentGatewayResponse("Net banking payment failed: " + e.getMessage());
         }
         
+        payment.setUpdatedAt(LocalDateTime.now());
         return paymentRepository.save(payment);
     }
     
     private Payment processWalletPaymentInternal(Payment payment, PaymentRequest request) {
         // Simulate wallet payment processing
         try {
-            payment.setStatus(Payment.PaymentStatus.SUCCESS);
-            payment.setPaymentGatewayResponse("Wallet payment successful");
+            if (request.getWalletId() == null || request.getWalletId().isEmpty()) {
+                payment.setStatus(Payment.PaymentStatus.FAILED);
+                payment.setPaymentGatewayResponse("Invalid wallet ID");
+            } else {
+                payment.setStatus(Payment.PaymentStatus.SUCCESS);
+                payment.setPaymentGatewayResponse("Wallet payment successful");
+            }
         } catch (Exception e) {
             payment.setStatus(Payment.PaymentStatus.FAILED);
             payment.setPaymentGatewayResponse("Wallet payment failed: " + e.getMessage());
         }
         
+        payment.setUpdatedAt(LocalDateTime.now());
         return paymentRepository.save(payment);
     }
     
-    @Override
-    public PaymentResponse convertToResponse(Payment payment) {
+    // Helper method to convert Payment entity to PaymentResponse DTO
+    private PaymentResponse convertToResponse(Payment payment) {
+        if (payment == null) return null;
+        
         PaymentResponse response = new PaymentResponse();
+        response.setId(payment.getId());
         response.setTransactionId(payment.getTransactionId());
+        response.setBookingId(payment.getBooking().getId());
+        response.setUserId(payment.getBooking().getUser().getId());
+        response.setEventId(payment.getBooking().getEvent().getId());
         response.setAmount(payment.getAmount());
         response.setPaymentMethod(payment.getPaymentMethod());
         response.setStatus(payment.getStatus());
+        response.setPaymentGatewayResponse(payment.getPaymentGatewayResponse());
         response.setCreatedAt(payment.getCreatedAt());
-        response.setBookingId(payment.getBooking().getId());
-        response.setTicketId(payment.getBooking().getTicketId());
-        
-        // Set message based on status
-        switch (payment.getStatus()) {
-            case SUCCESS:
-                response.setMessage("Payment completed successfully");
-                break;
-            case FAILED:
-                response.setMessage("Payment failed");
-                break;
-            case PENDING:
-                response.setMessage("Payment is being processed");
-                break;
-            case REFUNDED:
-                response.setMessage("Payment has been refunded");
-                break;
-            default:
-                response.setMessage("Payment status unknown");
-        }
+        response.setUpdatedAt(payment.getUpdatedAt());
         
         return response;
     }
-}
