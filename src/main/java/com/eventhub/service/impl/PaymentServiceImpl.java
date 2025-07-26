@@ -351,6 +351,7 @@ public class PaymentServiceImpl implements PaymentService {
         response.setBookingId(payment.getBooking().getId());
         response.setUserId(payment.getBooking().getUser().getId());
         response.setEventId(payment.getBooking().getEvent().getId());
+        response.setTicketId(payment.getBooking().getTicketId());
         response.setAmount(payment.getAmount());
         response.setPaymentMethod(payment.getPaymentMethod());
         response.setStatus(payment.getStatus());
@@ -360,3 +361,4 @@ public class PaymentServiceImpl implements PaymentService {
         
         return response;
     }
+}

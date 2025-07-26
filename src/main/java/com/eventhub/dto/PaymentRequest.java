@@ -41,4 +41,7 @@ public class PaymentRequest {
     
     // Net banking details
     private String bankCode;
+    
+    // Wallet details
+    private String walletId;
 }

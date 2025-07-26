@@ -93,9 +93,24 @@ public interface BookingService {
     byte[] generateTicketPdf(Long bookingId);
     
     /**
+     * Generate ticket QR code
+     */
+    byte[] generateTicketQRCode(String ticketId);
+    
+    /**
+     * Calculate total amount for booking
+     */
+    BigDecimal calculateTotalAmount(Long eventId, Integer numberOfTickets);
+    
+    /**
      * Delete booking
      */
     void deleteBooking(Long id);
+    
+    /**
+     * Convert entity to DTO
+     */
+    BookingDTO convertToDTO(Booking booking);
     
     /**
      * Inner class for booking statistics

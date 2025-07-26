@@ -76,4 +76,118 @@ public class Event {
     public enum Category {
         MUSIC, SPORTS, ARTS, TECHNOLOGY, BUSINESS, FOOD, HEALTH, EDUCATION, ENTERTAINMENT, OTHER
     }
+    
+    // Explicit getter methods (in case Lombok isn't working properly)
+    public Long getId() { 
+        return this.id; 
+    }
+    
+    public String getTitle() {
+        return this.title;
+    }
+    
+    public String getDescription() {
+        return this.description;
+    }
+    
+    public LocalDate getDate() {
+        return this.date;
+    }
+    
+    public LocalTime getTime() {
+        return this.time;
+    }
+    
+    public String getLocation() {
+        return this.location;
+    }
+    
+    public BigDecimal getPrice() {
+        return this.price;
+    }
+    
+    public Integer getTotalSeats() {
+        return this.totalSeats;
+    }
+    
+    public Integer getAvailableSeats() {
+        return this.availableSeats;
+    }
+    
+    public Category getCategory() {
+        return this.category;
+    }
+    
+    public String getImage() {
+        return this.image;
+    }
+    
+    public Boolean getIsActive() {
+        return this.isActive;
+    }
+    
+    public LocalDateTime getCreatedAt() {
+        return this.createdAt;
+    }
+    
+    public LocalDateTime getUpdatedAt() {
+        return this.updatedAt;
+    }
+    
+    // Explicit setter methods
+    public void setId(Long id) {
+        this.id = id;
+    }
+    
+    public void setTitle(String title) {
+        this.title = title;
+    }
+    
+    public void setDescription(String description) {
+        this.description = description;
+    }
+    
+    public void setDate(LocalDate date) {
+        this.date = date;
+    }
+    
+    public void setTime(LocalTime time) {
+        this.time = time;
+    }
+    
+    public void setLocation(String location) {
+        this.location = location;
+    }
+    
+    public void setPrice(BigDecimal price) {
+        this.price = price;
+    }
+    
+    public void setTotalSeats(Integer totalSeats) {
+        this.totalSeats = totalSeats;
+    }
+    
+    public void setAvailableSeats(Integer availableSeats) {
+        this.availableSeats = availableSeats;
+    }
+    
+    public void setCategory(Category category) {
+        this.category = category;
+    }
+    
+    public void setImage(String image) {
+        this.image = image;
+    }
+    
+    public void setIsActive(Boolean isActive) {
+        this.isActive = isActive;
+    }
+    
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+    
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 }

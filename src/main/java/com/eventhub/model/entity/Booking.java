@@ -60,4 +60,93 @@ public class Booking {
     public enum BookingStatus {
         PENDING, CONFIRMED, CANCELLED, COMPLETED
     }
+    
+    // Explicit getter and setter methods (in case Lombok isn't working properly)
+    public Long getId() {
+        return this.id;
+    }
+    
+    public void setId(Long id) {
+        this.id = id;
+    }
+    
+    public String getTicketId() {
+        return this.ticketId;
+    }
+    
+    public void setTicketId(String ticketId) {
+        this.ticketId = ticketId;
+    }
+    
+    public User getUser() {
+        return this.user;
+    }
+    
+    public void setUser(User user) {
+        this.user = user;
+    }
+    
+    public Event getEvent() {
+        return this.event;
+    }
+    
+    public void setEvent(Event event) {
+        this.event = event;
+    }
+    
+    public Integer getNumberOfTickets() {
+        return this.numberOfTickets;
+    }
+    
+    public void setNumberOfTickets(Integer numberOfTickets) {
+        this.numberOfTickets = numberOfTickets;
+    }
+    
+    public BigDecimal getTotalAmount() {
+        return this.totalAmount;
+    }
+    
+    public void setTotalAmount(BigDecimal totalAmount) {
+        this.totalAmount = totalAmount;
+    }
+    
+    public BigDecimal getServiceFee() {
+        return this.serviceFee;
+    }
+    
+    public void setServiceFee(BigDecimal serviceFee) {
+        this.serviceFee = serviceFee;
+    }
+    
+    public BookingStatus getStatus() {
+        return this.status;
+    }
+    
+    public void setStatus(BookingStatus status) {
+        this.status = status;
+    }
+    
+    public Payment getPayment() {
+        return this.payment;
+    }
+    
+    public void setPayment(Payment payment) {
+        this.payment = payment;
+    }
+    
+    public LocalDateTime getCreatedAt() {
+        return this.createdAt;
+    }
+    
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+    
+    public LocalDateTime getUpdatedAt() {
+        return this.updatedAt;
+    }
+    
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 }

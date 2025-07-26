@@ -84,12 +84,10 @@ public class BookingServiceImpl implements BookingService {
         booking.setTicketId(generateTicketId());
         booking.setUser(user);
         booking.setEvent(event);
-        booking.setNumberOfTickets(createBookingRequest.getNumberOfTickets()); // Using numberOfTickets
-        booking.setTotalAmount(totalAmount); // This includes subtotal + serviceFee
+        booking.setNumberOfTickets(createBookingRequest.getNumberOfTickets());
+        booking.setTotalAmount(totalAmount);
         booking.setServiceFee(serviceFee);
         booking.setStatus(Booking.BookingStatus.PENDING);
-        booking.setCreatedAt(LocalDateTime.now());
-        booking.setUpdatedAt(LocalDateTime.now());
         
         // Update available seats
         event.setAvailableSeats(event.getAvailableSeats() - createBookingRequest.getNumberOfTickets());
@@ -196,7 +194,6 @@ public class BookingServiceImpl implements BookingService {
         
         Booking.BookingStatus oldStatus = booking.getStatus();
         booking.setStatus(status);
-        booking.setUpdatedAt(LocalDateTime.now());
         
         // Handle seat availability when status changes
         if (oldStatus == Booking.BookingStatus.CONFIRMED && status == Booking.BookingStatus.CANCELLED) {
@@ -267,6 +264,29 @@ public class BookingServiceImpl implements BookingService {
     }
     
     @Override
+    public byte[] generateTicketQRCode(String ticketId) {
+        Booking booking = bookingRepository.findByTicketId(ticketId)
+            .orElseThrow(() -> new RuntimeException("Booking not found with ticket ID: " + ticketId));
+        
+        try {
+            String qrData = generateQrCodeData(booking);
+            return qrCodeUtil.generateQrCode(qrData);
+        } catch (Exception e) {
+            throw new RuntimeException("Error generating QR code: " + e.getMessage());
+        }
+    }
+    
+    @Override
+    public BigDecimal calculateTotalAmount(Long eventId, Integer numberOfTickets) {
+        Event event = eventRepository.findById(eventId)
+            .orElseThrow(() -> new RuntimeException("Event not found"));
+        
+        BigDecimal subtotal = event.getPrice().multiply(new BigDecimal(numberOfTickets));
+        BigDecimal serviceFee = serviceFeeCalculator.calculateServiceFee(subtotal);
+        return subtotal.add(serviceFee);
+    }
+    
+    @Override
     public void deleteBooking(Long id) {
         Booking booking = bookingRepository.findById(id)
             .orElseThrow(() -> new RuntimeException("Booking not found with id: " + id));
@@ -296,35 +316,43 @@ public class BookingServiceImpl implements BookingService {
             booking.getTicketId(),
             booking.getEvent().getId(),
             booking.getUser().getId(),
-            booking.getNumberOfTickets(), // Using correct field name
+            booking.getNumberOfTickets(),
             booking.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
         );
     }
     
-    private BookingDTO convertToDTO(Booking booking) {
+    @Override
+    public BookingDTO convertToDTO(Booking booking) {
         if (booking == null) return null;
         
         BookingDTO dto = new BookingDTO();
         dto.setId(booking.getId());
         dto.setTicketId(booking.getTicketId());
-        dto.setUserId(booking.getUser().getId());
-        dto.setUserName(booking.getUser().getName());
-        dto.setUserEmail(booking.getUser().getEmail());
         dto.setEventId(booking.getEvent().getId());
-        dto.setEventTitle(booking.getEvent().getTitle());
-        dto.setEventDate(booking.getEvent().getDate());
-        dto.setEventTime(booking.getEvent().getTime());
-        dto.setEventLocation(booking.getEvent().getLocation());
-        dto.setNumberOfSeats(booking.getNumberOfTickets()); // Using correct field name
-        dto.setSubtotal(booking.getTotalAmount().subtract(booking.getServiceFee())); // Calculate subtotal
-        dto.setServiceFee(booking.getServiceFee());
+        dto.setNumberOfTickets(booking.getNumberOfTickets());
         dto.setTotalAmount(booking.getTotalAmount());
+        dto.setServiceFee(booking.getServiceFee());
         dto.setStatus(booking.getStatus());
         dto.setCreatedAt(booking.getCreatedAt());
         dto.setUpdatedAt(booking.getUpdatedAt());
         
+        // Event details
+        dto.setEventTitle(booking.getEvent().getTitle());
+        dto.setEventLocation(booking.getEvent().getLocation());
+        dto.setEventImage(booking.getEvent().getImage());
+        dto.setEventCategory(booking.getEvent().getCategory().name());
+        
+        // User details
+        dto.setUserName(booking.getUser().getName());
+        dto.setUserEmail(booking.getUser().getEmail());
+        
+        // Payment details if payment exists
+        if (booking.getPayment() != null) {
+            dto.setTransactionId(booking.getPayment().getTransactionId());
+            dto.setPaymentMethod(booking.getPayment().getPaymentMethod());
+            dto.setPaymentStatus(booking.getPayment().getStatus());
+        }
+        
         return dto;
     }
-    
-
 }

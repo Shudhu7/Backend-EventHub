@@ -234,9 +234,20 @@ public class EventServiceImpl implements EventService {
         
         // Calculate average rating if reviews exist
         if (reviewRepository != null) {
-            Double avgRating = reviewRepository.findAverageRatingByEventId(event.getId());
-            dto.setAverageRating(avgRating != null ? avgRating : 0.0);
-            dto.setReviewCount(reviewRepository.countByEventId(event.getId()));
+            try {
+                Double avgRating = reviewRepository.getAverageRatingByEventId(event.getId());
+                dto.setAverageRating(avgRating != null ? avgRating : 0.0);
+                
+                Long reviewCount = reviewRepository.getReviewCountByEventId(event.getId());
+                dto.setTotalReviews(reviewCount != null ? reviewCount.intValue() : 0);
+            } catch (Exception e) {
+                // If review repository methods fail, set defaults
+                dto.setAverageRating(0.0);
+                dto.setTotalReviews(0);
+            }
+        } else {
+            dto.setAverageRating(0.0);
+            dto.setTotalReviews(0);
         }
         
         return dto;
