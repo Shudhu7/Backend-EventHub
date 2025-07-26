@@ -15,11 +15,12 @@ public class CorsConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        // Allow specific origins (update with your frontend URL)
+        // Allow specific origins (updated to include port 8081)
         configuration.setAllowedOriginPatterns(Arrays.asList(
             "http://localhost:3000",
             "http://localhost:5173",
-            "https://*.vercel.app",
+            "http://localhost:8081",  // Added frontend port
+            "https://myeventhub.vercel.app/",
             "https://*.netlify.app"
         ));
         
