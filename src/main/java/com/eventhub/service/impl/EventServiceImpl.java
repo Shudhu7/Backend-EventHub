@@ -5,6 +5,7 @@ import com.eventhub.model.entity.Event;
 import com.eventhub.repository.EventRepository;
 import com.eventhub.repository.ReviewRepository;
 import com.eventhub.service.EventService;
+import com.eventhub.service.WebSocketService; // ADD THIS IMPORT
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -14,7 +15,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap; // ADD THIS IMPORT
 import java.util.List;
+import java.util.Map; // ADD THIS IMPORT
 import java.util.stream.Collectors;
 
 @Service
@@ -27,6 +30,10 @@ public class EventServiceImpl implements EventService {
     @Autowired
     private ReviewRepository reviewRepository;
     
+    // ADD THIS AUTOWIRED FIELD
+    @Autowired
+    private WebSocketService webSocketService;
+    
     @Override
     public EventDTO createEvent(EventDTO eventDTO) {
         Event event = convertToEntity(eventDTO);
@@ -36,7 +43,22 @@ public class EventServiceImpl implements EventService {
         event.setUpdatedAt(LocalDateTime.now());
         
         Event savedEvent = eventRepository.save(event);
-        return convertToDTO(savedEvent);
+        EventDTO result = convertToDTO(savedEvent);
+        
+        // ADD THIS REAL-TIME NOTIFICATION CODE
+        try {
+            Map<String, Object> notification = new HashMap<>();
+            notification.put("type", "NEW_EVENT");
+            notification.put("event", result);
+            notification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendGlobalEventNotification(notification);
+        } catch (Exception e) {
+            // Log the error but don't fail the event creation
+            System.err.println("Failed to send WebSocket notification: " + e.getMessage());
+        }
+        
+        return result;
     }
     
     @Override
@@ -63,7 +85,23 @@ public class EventServiceImpl implements EventService {
         }
         
         Event updatedEvent = eventRepository.save(existingEvent);
-        return convertToDTO(updatedEvent);
+        EventDTO result = convertToDTO(updatedEvent);
+        
+        // ADD THIS REAL-TIME UPDATE NOTIFICATION CODE
+        try {
+            Map<String, Object> notification = new HashMap<>();
+            notification.put("type", "EVENT_UPDATED");
+            notification.put("event", result);
+            notification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendGlobalEventNotification(notification);
+            webSocketService.sendEventUpdate(id.toString(), result);
+        } catch (Exception e) {
+            // Log the error but don't fail the event update
+            System.err.println("Failed to send WebSocket notification: " + e.getMessage());
+        }
+        
+        return result;
     }
     
     @Override
@@ -184,6 +222,19 @@ public class EventServiceImpl implements EventService {
         event.setIsActive(false);
         event.setUpdatedAt(LocalDateTime.now());
         eventRepository.save(event);
+        
+        // ADD THIS REAL-TIME DELETE NOTIFICATION CODE
+        try {
+            Map<String, Object> notification = new HashMap<>();
+            notification.put("type", "EVENT_DELETED");
+            notification.put("eventId", id);
+            notification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendGlobalEventNotification(notification);
+        } catch (Exception e) {
+            // Log the error but don't fail the event deletion
+            System.err.println("Failed to send WebSocket notification: " + e.getMessage());
+        }
     }
     
     @Override
@@ -199,6 +250,30 @@ public class EventServiceImpl implements EventService {
         event.setAvailableSeats(newAvailableSeats);
         event.setUpdatedAt(LocalDateTime.now());
         eventRepository.save(event);
+        
+        // ADD THIS REAL-TIME SEAT UPDATE CODE
+        try {
+            Map<String, Object> seatUpdate = new HashMap<>();
+            seatUpdate.put("eventId", eventId);
+            seatUpdate.put("availableSeats", newAvailableSeats);
+            seatUpdate.put("totalSeats", event.getTotalSeats());
+            seatUpdate.put("bookedSeats", event.getTotalSeats() - newAvailableSeats);
+            seatUpdate.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendSeatUpdate(eventId.toString(), seatUpdate);
+            
+            // Also send general event update
+            Map<String, Object> eventUpdate = new HashMap<>();
+            eventUpdate.put("type", "SEAT_UPDATE");
+            eventUpdate.put("eventId", eventId);
+            eventUpdate.put("availableSeats", newAvailableSeats);
+            eventUpdate.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendGlobalEventNotification(eventUpdate);
+        } catch (Exception e) {
+            // Log the error but don't fail the seat update
+            System.err.println("Failed to send WebSocket notification: " + e.getMessage());
+        }
     }
     
     @Override

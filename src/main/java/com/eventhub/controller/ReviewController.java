@@ -2,6 +2,7 @@ package com.eventhub.controller;
 
 import com.eventhub.dto.ReviewDTO;
 import com.eventhub.service.ReviewService;
+import com.eventhub.service.WebSocketService; // ADD THIS IMPORT
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -13,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime; // ADD THIS IMPORT
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +27,10 @@ public class ReviewController {
     @Autowired
     private ReviewService reviewService;
     
+    // ADD THIS WEBSOCKET SERVICE INJECTION
+    @Autowired
+    private WebSocketService webSocketService;
+    
     @PostMapping
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<?> createReview(@Valid @RequestBody ReviewDTO reviewDTO) {
@@ -35,6 +41,20 @@ public class ReviewController {
             response.put("status", "success");
             response.put("message", "Review created successfully");
             response.put("data", createdReview);
+            
+            // ADD ADDITIONAL REAL-TIME NOTIFICATION (Optional - since service already handles it)
+            try {
+                Map<String, Object> controllerNotification = new HashMap<>();
+                controllerNotification.put("type", "REVIEW_CREATED_SUCCESS");
+                controllerNotification.put("eventId", createdReview.getEventId());
+                controllerNotification.put("userId", createdReview.getUserId());
+                controllerNotification.put("timestamp", LocalDateTime.now());
+                
+                webSocketService.sendGlobalEventNotification(controllerNotification);
+            } catch (Exception e) {
+                // Log but don't fail the response
+                System.err.println("Failed to send controller WebSocket notification: " + e.getMessage());
+            }
             
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (Exception e) {
@@ -175,11 +195,28 @@ public class ReviewController {
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<?> deleteReview(@PathVariable Long id) {
         try {
+            // Get review info before deletion for WebSocket notification
+            ReviewDTO reviewToDelete = reviewService.getReviewById(id);
+            
             reviewService.deleteReview(id);
             
             Map<String, Object> response = new HashMap<>();
             response.put("status", "success");
             response.put("message", "Review deleted successfully");
+            
+            // ADD ADDITIONAL REAL-TIME NOTIFICATION (Optional)
+            try {
+                Map<String, Object> deleteNotification = new HashMap<>();
+                deleteNotification.put("type", "REVIEW_DELETE_SUCCESS");
+                deleteNotification.put("eventId", reviewToDelete.getEventId());
+                deleteNotification.put("reviewId", id);
+                deleteNotification.put("timestamp", LocalDateTime.now());
+                
+                webSocketService.sendGlobalEventNotification(deleteNotification);
+            } catch (Exception e) {
+                // Log but don't fail the response
+                System.err.println("Failed to send delete WebSocket notification: " + e.getMessage());
+            }
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -220,6 +257,20 @@ public class ReviewController {
             Map<String, Object> response = new HashMap<>();
             response.put("status", "success");
             response.put("data", distribution);
+            
+            // ADD REAL-TIME NOTIFICATION FOR RATING DISTRIBUTION REQUEST
+            try {
+                Map<String, Object> distributionNotification = new HashMap<>();
+                distributionNotification.put("type", "RATING_DISTRIBUTION_REQUESTED");
+                distributionNotification.put("eventId", eventId);
+                distributionNotification.put("distribution", distribution);
+                distributionNotification.put("timestamp", LocalDateTime.now());
+                
+                webSocketService.sendEventUpdate(eventId.toString(), distributionNotification);
+            } catch (Exception e) {
+                // Log but don't fail the response
+                System.err.println("Failed to send distribution WebSocket notification: " + e.getMessage());
+            }
             
             return ResponseEntity.ok(response);
         } catch (Exception e) {

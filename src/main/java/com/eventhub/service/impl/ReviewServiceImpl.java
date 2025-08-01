@@ -9,6 +9,7 @@ import com.eventhub.repository.EventRepository;
 import com.eventhub.repository.ReviewRepository;
 import com.eventhub.repository.UserRepository;
 import com.eventhub.service.ReviewService;
+import com.eventhub.service.WebSocketService; 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -17,12 +18,16 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime; 
+import java.util.HashMap; 
 import java.util.List;
+import java.util.Map; 
 import java.util.Optional;
 import java.util.stream.Collectors;
 import com.eventhub.dto.PaymentRequest;
 import com.eventhub.dto.PaymentResponse;
 import com.eventhub.dto.RefundRequest;
+
 @Service
 @Transactional
 public class ReviewServiceImpl implements ReviewService {
@@ -38,6 +43,10 @@ public class ReviewServiceImpl implements ReviewService {
     
     @Autowired
     private BookingRepository bookingRepository;
+    
+    // ADD THIS WEBSOCKET SERVICE INJECTION
+    @Autowired
+    private WebSocketService webSocketService;
     
     @Override
     public ReviewDTO createReview(ReviewDTO reviewDTO) {
@@ -68,7 +77,49 @@ public class ReviewServiceImpl implements ReviewService {
         review.setComment(reviewDTO.getComment());
         
         Review savedReview = reviewRepository.save(review);
-        return convertToDTO(savedReview);
+        ReviewDTO result = convertToDTO(savedReview);
+        
+        // ADD REAL-TIME NOTIFICATION CODE
+        try {
+            // Send review notification to event subscribers
+            Map<String, Object> reviewNotification = new HashMap<>();
+            reviewNotification.put("type", "NEW_REVIEW");
+            reviewNotification.put("eventId", event.getId());
+            reviewNotification.put("review", result);
+            reviewNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendEventUpdate(event.getId().toString(), reviewNotification);
+            
+            // Send global notification for new review
+            Map<String, Object> globalNotification = new HashMap<>();
+            globalNotification.put("type", "REVIEW_ADDED");
+            globalNotification.put("eventId", event.getId());
+            globalNotification.put("eventTitle", event.getTitle());
+            globalNotification.put("rating", result.getRating());
+            globalNotification.put("userName", result.getUserName());
+            globalNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendGlobalEventNotification(globalNotification);
+            
+            // Update event rating statistics in real-time
+            Double newAverageRating = getAverageRatingByEventId(event.getId());
+            Long newReviewCount = getReviewCountByEventId(event.getId());
+            
+            Map<String, Object> ratingUpdate = new HashMap<>();
+            ratingUpdate.put("type", "RATING_UPDATE");
+            ratingUpdate.put("eventId", event.getId());
+            ratingUpdate.put("averageRating", newAverageRating != null ? newAverageRating : 0.0);
+            ratingUpdate.put("reviewCount", newReviewCount != null ? newReviewCount : 0);
+            ratingUpdate.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendEventUpdate(event.getId().toString(), ratingUpdate);
+            
+        } catch (Exception e) {
+            // Log the error but don't fail the review creation
+            System.err.println("Failed to send review WebSocket notification: " + e.getMessage());
+        }
+        
+        return result;
     }
     
     @Override
@@ -85,12 +136,51 @@ public class ReviewServiceImpl implements ReviewService {
             throw new RuntimeException("You can only update your own reviews");
         }
         
+        // Store old rating for comparison
+        Integer oldRating = review.getRating();
+        
         // Update review
         review.setRating(reviewDTO.getRating());
         review.setComment(reviewDTO.getComment());
         
         Review updatedReview = reviewRepository.save(review);
-        return convertToDTO(updatedReview);
+        ReviewDTO result = convertToDTO(updatedReview);
+        
+        // ADD REAL-TIME UPDATE NOTIFICATION CODE
+        try {
+            // Send review update notification
+            Map<String, Object> updateNotification = new HashMap<>();
+            updateNotification.put("type", "REVIEW_UPDATED");
+            updateNotification.put("eventId", review.getEvent().getId());
+            updateNotification.put("reviewId", id);
+            updateNotification.put("review", result);
+            updateNotification.put("oldRating", oldRating);
+            updateNotification.put("newRating", reviewDTO.getRating());
+            updateNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendEventUpdate(review.getEvent().getId().toString(), updateNotification);
+            
+            // Update rating statistics if rating changed
+            if (!oldRating.equals(reviewDTO.getRating())) {
+                Double newAverageRating = getAverageRatingByEventId(review.getEvent().getId());
+                Long newReviewCount = getReviewCountByEventId(review.getEvent().getId());
+                
+                Map<String, Object> ratingUpdate = new HashMap<>();
+                ratingUpdate.put("type", "RATING_UPDATE");
+                ratingUpdate.put("eventId", review.getEvent().getId());
+                ratingUpdate.put("averageRating", newAverageRating != null ? newAverageRating : 0.0);
+                ratingUpdate.put("reviewCount", newReviewCount != null ? newReviewCount : 0);
+                ratingUpdate.put("timestamp", LocalDateTime.now());
+                
+                webSocketService.sendEventUpdate(review.getEvent().getId().toString(), ratingUpdate);
+            }
+            
+        } catch (Exception e) {
+            // Log the error but don't fail the review update
+            System.err.println("Failed to send review update WebSocket notification: " + e.getMessage());
+        }
+        
+        return result;
     }
     
     @Override
@@ -154,7 +244,40 @@ public class ReviewServiceImpl implements ReviewService {
             throw new RuntimeException("You can only delete your own reviews");
         }
         
+        // Store event info before deletion
+        Event event = review.getEvent();
+        Long eventId = event.getId();
+        
         reviewRepository.delete(review);
+        
+        // ADD REAL-TIME DELETE NOTIFICATION CODE
+        try {
+            // Send review deletion notification
+            Map<String, Object> deleteNotification = new HashMap<>();
+            deleteNotification.put("type", "REVIEW_DELETED");
+            deleteNotification.put("eventId", eventId);
+            deleteNotification.put("reviewId", id);
+            deleteNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendEventUpdate(eventId.toString(), deleteNotification);
+            
+            // Update rating statistics after deletion
+            Double newAverageRating = getAverageRatingByEventId(eventId);
+            Long newReviewCount = getReviewCountByEventId(eventId);
+            
+            Map<String, Object> ratingUpdate = new HashMap<>();
+            ratingUpdate.put("type", "RATING_UPDATE");
+            ratingUpdate.put("eventId", eventId);
+            ratingUpdate.put("averageRating", newAverageRating != null ? newAverageRating : 0.0);
+            ratingUpdate.put("reviewCount", newReviewCount != null ? newReviewCount : 0);
+            ratingUpdate.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendEventUpdate(eventId.toString(), ratingUpdate);
+            
+        } catch (Exception e) {
+            // Log the error but don't fail the review deletion
+            System.err.println("Failed to send review delete WebSocket notification: " + e.getMessage());
+        }
     }
     
     @Override
