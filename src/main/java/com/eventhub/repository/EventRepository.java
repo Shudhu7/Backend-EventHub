@@ -36,6 +36,13 @@ public interface EventRepository extends JpaRepository<Event, Long> {
            "LOWER(e.location) LIKE LOWER(CONCAT('%', :keyword, '%')))")
     List<Event> searchActiveEvents(@Param("keyword") String keyword);
     
+    // NEW: Search functionality with pagination
+    @Query("SELECT e FROM Event e WHERE e.isActive = true AND " +
+           "(LOWER(e.title) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "LOWER(e.description) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "LOWER(e.location) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+    Page<Event> searchActiveEvents(@Param("keyword") String keyword, Pageable pageable);
+    
     // Filter events with multiple criteria
     @Query("SELECT e FROM Event e WHERE e.isActive = true " +
            "AND (:category IS NULL OR e.category = :category) " +
@@ -70,8 +77,12 @@ public interface EventRepository extends JpaRepository<Event, Long> {
                                            @Param("maxPrice") BigDecimal maxPrice);
     
     // Temporal queries
-    @Query("SELECT e FROM Event e WHERE e.isActive = true AND e.date > CURRENT_DATE")
+    @Query("SELECT e FROM Event e WHERE e.isActive = true AND e.date > CURRENT_DATE ORDER BY e.date ASC")
     List<Event> findUpcomingEvents();
+    
+    // NEW: Upcoming events with limit
+    @Query("SELECT e FROM Event e WHERE e.isActive = true AND e.date > CURRENT_DATE ORDER BY e.date ASC")
+    List<Event> findUpcomingEventsWithLimit(Pageable pageable);
     
     @Query("SELECT e FROM Event e WHERE e.isActive = true AND e.date < CURRENT_DATE")
     List<Event> findPastEvents();

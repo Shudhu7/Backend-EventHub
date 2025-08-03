@@ -1,3 +1,4 @@
+// src/main/java/com/eventhub/service/impl/EventServiceImpl.java
 package com.eventhub.service.impl;
 
 import com.eventhub.dto.EventDTO;
@@ -5,19 +6,22 @@ import com.eventhub.model.entity.Event;
 import com.eventhub.repository.EventRepository;
 import com.eventhub.repository.ReviewRepository;
 import com.eventhub.service.EventService;
-import com.eventhub.service.WebSocketService; // ADD THIS IMPORT
+import com.eventhub.service.WebSocketService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationAdapter;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.HashMap; // ADD THIS IMPORT
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Map; // ADD THIS IMPORT
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -30,12 +34,13 @@ public class EventServiceImpl implements EventService {
     @Autowired
     private ReviewRepository reviewRepository;
     
-    // ADD THIS AUTOWIRED FIELD
     @Autowired
     private WebSocketService webSocketService;
     
     @Override
     public EventDTO createEvent(EventDTO eventDTO) {
+        System.out.println("🎯 EventServiceImpl: Creating event - " + eventDTO.getTitle());
+        
         Event event = convertToEntity(eventDTO);
         event.setAvailableSeats(event.getTotalSeats());
         event.setIsActive(true);
@@ -45,24 +50,77 @@ public class EventServiceImpl implements EventService {
         Event savedEvent = eventRepository.save(event);
         EventDTO result = convertToDTO(savedEvent);
         
-        // ADD THIS REAL-TIME NOTIFICATION CODE
-        try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("type", "NEW_EVENT");
-            notification.put("event", result);
-            notification.put("timestamp", LocalDateTime.now());
-            
-            webSocketService.sendGlobalEventNotification(notification);
-        } catch (Exception e) {
-            // Log the error but don't fail the event creation
-            System.err.println("Failed to send WebSocket notification: " + e.getMessage());
+        System.out.println("✅ EventServiceImpl: Event saved to database with ID: " + result.getId());
+        
+        // ⚡ ENHANCED REAL-TIME NOTIFICATION - Send after transaction commits
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+                @Override
+                public void afterCommit() {
+                    System.out.println("📡 EventServiceImpl: Transaction committed, sending notifications...");
+                    sendEventCreationNotifications(result);
+                }
+            });
+        } else {
+            // Fallback if transaction synchronization is not active
+            System.out.println("⚠️ EventServiceImpl: No transaction synchronization, sending notifications immediately");
+            sendEventCreationNotifications(result);
         }
         
         return result;
     }
     
+    /**
+     * Send comprehensive real-time notifications for event creation
+     */
+    private void sendEventCreationNotifications(EventDTO eventDTO) {
+        try {
+            System.out.println("🚀 Sending real-time notifications for new event: " + eventDTO.getTitle());
+            
+            // 1. Send to global event subscribers (all users)
+            Map<String, Object> globalNotification = new HashMap<>();
+            globalNotification.put("type", "NEW_EVENT");
+            globalNotification.put("event", eventDTO);
+            globalNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendGlobalEventNotification(globalNotification);
+            System.out.println("✅ Sent global event notification");
+            
+            // 2. Send to admin dashboard subscribers (admins only)
+            Map<String, Object> adminDashboardNotification = new HashMap<>();
+            adminDashboardNotification.put("type", "NEW_EVENT_CREATED");
+            adminDashboardNotification.put("eventId", eventDTO.getId());
+            adminDashboardNotification.put("eventTitle", eventDTO.getTitle());
+            adminDashboardNotification.put("eventCategory", eventDTO.getCategory());
+            adminDashboardNotification.put("eventDate", eventDTO.getDate());
+            adminDashboardNotification.put("eventPrice", eventDTO.getPrice());
+            adminDashboardNotification.put("totalSeats", eventDTO.getTotalSeats());
+            adminDashboardNotification.put("availableSeats", eventDTO.getAvailableSeats());
+            adminDashboardNotification.put("message", "New event '" + eventDTO.getTitle() + "' has been created successfully");
+            adminDashboardNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendDashboardUpdate(adminDashboardNotification);
+            System.out.println("✅ Sent admin dashboard notification");
+            
+            // 3. Send event-specific update
+            Map<String, Object> specificEventNotification = new HashMap<>();
+            specificEventNotification.put("type", "EVENT_CREATED");
+            specificEventNotification.put("event", eventDTO);
+            specificEventNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendEventUpdate(eventDTO.getId().toString(), specificEventNotification);
+            System.out.println("✅ Sent event-specific notification");
+            
+        } catch (Exception e) {
+            System.err.println("❌ Failed to send WebSocket notifications: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
     @Override
     public EventDTO updateEvent(Long id, EventDTO eventDTO) {
+        System.out.println("🔄 EventServiceImpl: Updating event - " + id);
+        
         Event existingEvent = eventRepository.findById(id)
             .orElseThrow(() -> new RuntimeException("Event not found with id: " + id));
         
@@ -87,21 +145,58 @@ public class EventServiceImpl implements EventService {
         Event updatedEvent = eventRepository.save(existingEvent);
         EventDTO result = convertToDTO(updatedEvent);
         
-        // ADD THIS REAL-TIME UPDATE NOTIFICATION CODE
-        try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("type", "EVENT_UPDATED");
-            notification.put("event", result);
-            notification.put("timestamp", LocalDateTime.now());
-            
-            webSocketService.sendGlobalEventNotification(notification);
-            webSocketService.sendEventUpdate(id.toString(), result);
-        } catch (Exception e) {
-            // Log the error but don't fail the event update
-            System.err.println("Failed to send WebSocket notification: " + e.getMessage());
+        System.out.println("✅ EventServiceImpl: Event updated in database");
+        
+        // ⚡ ENHANCED REAL-TIME UPDATE NOTIFICATION
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+                @Override
+                public void afterCommit() {
+                    System.out.println("📡 EventServiceImpl: Update transaction committed, sending notifications...");
+                    sendEventUpdateNotifications(result);
+                }
+            });
+        } else {
+            sendEventUpdateNotifications(result);
         }
         
         return result;
+    }
+    
+    /**
+     * Send comprehensive real-time notifications for event updates
+     */
+    private void sendEventUpdateNotifications(EventDTO eventDTO) {
+        try {
+            System.out.println("🔄 Sending real-time notifications for updated event: " + eventDTO.getTitle());
+            
+            // 1. Global event update
+            Map<String, Object> globalNotification = new HashMap<>();
+            globalNotification.put("type", "EVENT_UPDATED");
+            globalNotification.put("event", eventDTO);
+            globalNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendGlobalEventNotification(globalNotification);
+            
+            // 2. Admin dashboard update
+            Map<String, Object> adminDashboardNotification = new HashMap<>();
+            adminDashboardNotification.put("type", "EVENT_UPDATED");
+            adminDashboardNotification.put("eventId", eventDTO.getId());
+            adminDashboardNotification.put("eventTitle", eventDTO.getTitle());
+            adminDashboardNotification.put("message", "Event '" + eventDTO.getTitle() + "' has been updated");
+            adminDashboardNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendDashboardUpdate(adminDashboardNotification);
+            
+            // 3. Event-specific update
+            webSocketService.sendEventUpdate(eventDTO.getId().toString(), eventDTO);
+            
+            System.out.println("✅ Sent all event update notifications");
+            
+        } catch (Exception e) {
+            System.err.println("❌ Failed to send WebSocket update notifications: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
     
     @Override
@@ -126,6 +221,12 @@ public class EventServiceImpl implements EventService {
     }
     
     @Override
+    public Page<EventDTO> getAllEvents(Pageable pageable) {
+        Page<Event> events = eventRepository.findAll(pageable);
+        return events.map(this::convertToDTO);
+    }
+    
+    @Override
     public List<EventDTO> getEventsByCategory(Event.Category category) {
         List<Event> events = eventRepository.findActiveEventsByCategory(category);
         return events.stream()
@@ -145,6 +246,12 @@ public class EventServiceImpl implements EventService {
         return events.stream()
             .map(this::convertToDTO)
             .collect(Collectors.toList());
+    }
+    
+    @Override
+    public Page<EventDTO> searchEvents(String keyword, Pageable pageable) {
+        Page<Event> events = eventRepository.searchActiveEvents(keyword, pageable);
+        return events.map(this::convertToDTO);
     }
     
     @Override
@@ -198,6 +305,21 @@ public class EventServiceImpl implements EventService {
     }
     
     @Override
+    public List<EventDTO> getUpcomingEvents(int limit) {
+        // Use the existing findUpcomingEvents() method and limit in service layer
+        List<Event> allUpcoming = eventRepository.findUpcomingEvents();
+        
+        // Limit the results in Java to avoid MySQL syntax issues
+        List<Event> limitedEvents = allUpcoming.stream()
+            .limit(limit)
+            .collect(Collectors.toList());
+            
+        return limitedEvents.stream()
+            .map(this::convertToDTO)
+            .collect(Collectors.toList());
+    }
+    
+    @Override
     public List<EventDTO> getPastEvents() {
         List<Event> events = eventRepository.findPastEvents();
         return events.stream()
@@ -214,31 +336,153 @@ public class EventServiceImpl implements EventService {
     }
     
     @Override
-    public void deleteEvent(Long id) {
+    public List<String> getAllCategories() {
+        return Arrays.stream(Event.Category.values())
+            .map(Enum::name)
+            .collect(Collectors.toList());
+    }
+    
+    @Override
+    public EventDTO toggleEventStatus(Long id) {
+        System.out.println("🔄 EventServiceImpl: Toggling status for event - " + id);
+        
         Event event = eventRepository.findById(id)
             .orElseThrow(() -> new RuntimeException("Event not found with id: " + id));
+        
+        boolean oldStatus = event.getIsActive();
+        event.setIsActive(!oldStatus);
+        event.setUpdatedAt(LocalDateTime.now());
+        
+        Event updatedEvent = eventRepository.save(event);
+        EventDTO result = convertToDTO(updatedEvent);
+        
+        System.out.println("✅ EventServiceImpl: Event status changed from " + oldStatus + " to " + result.getIsActive());
+        
+        // Send real-time notification for status change
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+                @Override
+                public void afterCommit() {
+                    System.out.println("📡 EventServiceImpl: Status change transaction committed, sending notifications...");
+                    sendEventStatusChangeNotifications(result);
+                }
+            });
+        } else {
+            sendEventStatusChangeNotifications(result);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * Send comprehensive real-time notifications for event status changes
+     */
+    private void sendEventStatusChangeNotifications(EventDTO eventDTO) {
+        try {
+            System.out.println("🔄 Sending real-time notifications for status change: " + eventDTO.getTitle() + 
+                              " (Active: " + eventDTO.getIsActive() + ")");
+            
+            // 1. Global status change notification
+            Map<String, Object> globalNotification = new HashMap<>();
+            globalNotification.put("type", "EVENT_STATUS_CHANGED");
+            globalNotification.put("event", eventDTO);
+            globalNotification.put("isActive", eventDTO.getIsActive());
+            globalNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendGlobalEventNotification(globalNotification);
+            
+            // 2. Admin dashboard notification
+            Map<String, Object> adminNotification = new HashMap<>();
+            adminNotification.put("type", "EVENT_STATUS_CHANGED");
+            adminNotification.put("eventId", eventDTO.getId());
+            adminNotification.put("eventTitle", eventDTO.getTitle());
+            adminNotification.put("isActive", eventDTO.getIsActive());
+            adminNotification.put("message", "Event '" + eventDTO.getTitle() + "' is now " + 
+                                             (eventDTO.getIsActive() ? "active" : "inactive"));
+            adminNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendDashboardUpdate(adminNotification);
+            
+            // 3. Event-specific notification
+            webSocketService.sendEventUpdate(eventDTO.getId().toString(), globalNotification);
+            
+            System.out.println("✅ Sent all status change notifications");
+            
+        } catch (Exception e) {
+            System.err.println("❌ Failed to send status change notifications: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    @Override
+    public void deleteEvent(Long id) {
+        System.out.println("🗑️ EventServiceImpl: Deleting event - " + id);
+        
+        Event event = eventRepository.findById(id)
+            .orElseThrow(() -> new RuntimeException("Event not found with id: " + id));
+        
+        String eventTitle = event.getTitle(); // Store title before deletion
         
         // Soft delete
         event.setIsActive(false);
         event.setUpdatedAt(LocalDateTime.now());
         eventRepository.save(event);
         
-        // ADD THIS REAL-TIME DELETE NOTIFICATION CODE
+        System.out.println("✅ EventServiceImpl: Event soft deleted from database");
+        
+        // Send real-time delete notification
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+                @Override
+                public void afterCommit() {
+                    System.out.println("📡 EventServiceImpl: Delete transaction committed, sending notifications...");
+                    sendEventDeletionNotifications(id, eventTitle);
+                }
+            });
+        } else {
+            sendEventDeletionNotifications(id, eventTitle);
+        }
+    }
+    
+    /**
+     * Send comprehensive real-time notifications for event deletion
+     */
+    private void sendEventDeletionNotifications(Long eventId, String eventTitle) {
         try {
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("type", "EVENT_DELETED");
-            notification.put("eventId", id);
-            notification.put("timestamp", LocalDateTime.now());
+            System.out.println("🗑️ Sending real-time notifications for deleted event: " + eventTitle);
             
-            webSocketService.sendGlobalEventNotification(notification);
+            // 1. Global deletion notification
+            Map<String, Object> globalNotification = new HashMap<>();
+            globalNotification.put("type", "EVENT_DELETED");
+            globalNotification.put("eventId", eventId);
+            globalNotification.put("eventTitle", eventTitle);
+            globalNotification.put("message", "Event '" + eventTitle + "' has been deleted");
+            globalNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendGlobalEventNotification(globalNotification);
+            
+            // 2. Admin dashboard notification
+            Map<String, Object> adminDashboardNotification = new HashMap<>();
+            adminDashboardNotification.put("type", "EVENT_DELETED");
+            adminDashboardNotification.put("eventId", eventId);
+            adminDashboardNotification.put("eventTitle", eventTitle);
+            adminDashboardNotification.put("message", "Event '" + eventTitle + "' has been deleted successfully");
+            adminDashboardNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendDashboardUpdate(adminDashboardNotification);
+            
+            System.out.println("✅ Sent all event deletion notifications");
+            
         } catch (Exception e) {
-            // Log the error but don't fail the event deletion
-            System.err.println("Failed to send WebSocket notification: " + e.getMessage());
+            System.err.println("❌ Failed to send WebSocket deletion notifications: " + e.getMessage());
+            e.printStackTrace();
         }
     }
     
     @Override
     public void updateAvailableSeats(Long eventId, Integer seatsBooked) {
+        System.out.println("💺 EventServiceImpl: Updating seats for event " + eventId + ", booking " + seatsBooked + " seats");
+        
         Event event = eventRepository.findById(eventId)
             .orElseThrow(() -> new RuntimeException("Event not found with id: " + eventId));
         
@@ -251,8 +495,30 @@ public class EventServiceImpl implements EventService {
         event.setUpdatedAt(LocalDateTime.now());
         eventRepository.save(event);
         
-        // ADD THIS REAL-TIME SEAT UPDATE CODE
+        System.out.println("✅ EventServiceImpl: Seats updated - Available: " + newAvailableSeats);
+        
+        // Send real-time seat update notification
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+                @Override
+                public void afterCommit() {
+                    System.out.println("📡 EventServiceImpl: Seat update transaction committed, sending notifications...");
+                    sendSeatUpdateNotifications(eventId, event, newAvailableSeats);
+                }
+            });
+        } else {
+            sendSeatUpdateNotifications(eventId, event, newAvailableSeats);
+        }
+    }
+    
+    /**
+     * Send comprehensive real-time notifications for seat updates
+     */
+    private void sendSeatUpdateNotifications(Long eventId, Event event, int newAvailableSeats) {
         try {
+            System.out.println("💺 Sending real-time seat update notifications for event: " + event.getTitle());
+            
+            // 1. Send seat-specific update
             Map<String, Object> seatUpdate = new HashMap<>();
             seatUpdate.put("eventId", eventId);
             seatUpdate.put("availableSeats", newAvailableSeats);
@@ -262,17 +528,33 @@ public class EventServiceImpl implements EventService {
             
             webSocketService.sendSeatUpdate(eventId.toString(), seatUpdate);
             
-            // Also send general event update
+            // 2. Send general event update
             Map<String, Object> eventUpdate = new HashMap<>();
             eventUpdate.put("type", "SEAT_UPDATE");
             eventUpdate.put("eventId", eventId);
+            eventUpdate.put("eventTitle", event.getTitle());
             eventUpdate.put("availableSeats", newAvailableSeats);
+            eventUpdate.put("totalSeats", event.getTotalSeats());
             eventUpdate.put("timestamp", LocalDateTime.now());
             
             webSocketService.sendGlobalEventNotification(eventUpdate);
+            
+            // 3. Send admin dashboard notification
+            Map<String, Object> adminNotification = new HashMap<>();
+            adminNotification.put("type", "SEAT_UPDATE");
+            adminNotification.put("eventId", eventId);
+            adminNotification.put("eventTitle", event.getTitle());
+            adminNotification.put("availableSeats", newAvailableSeats);
+            adminNotification.put("message", "Seats updated for '" + event.getTitle() + "' - " + newAvailableSeats + " seats remaining");
+            adminNotification.put("timestamp", LocalDateTime.now());
+            
+            webSocketService.sendDashboardUpdate(adminNotification);
+            
+            System.out.println("✅ Sent all seat update notifications");
+            
         } catch (Exception e) {
-            // Log the error but don't fail the seat update
-            System.err.println("Failed to send WebSocket notification: " + e.getMessage());
+            System.err.println("❌ Failed to send WebSocket seat update notifications: " + e.getMessage());
+            e.printStackTrace();
         }
     }
     

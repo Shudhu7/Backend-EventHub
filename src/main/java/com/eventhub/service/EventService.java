@@ -37,6 +37,11 @@ public interface EventService {
     Page<EventDTO> getAllActiveEvents(Pageable pageable);
     
     /**
+     * Get all events (including inactive) with pagination
+     */
+    Page<EventDTO> getAllEvents(Pageable pageable);
+    
+    /**
      * Get events by category
      */
     List<EventDTO> getEventsByCategory(Event.Category category);
@@ -50,6 +55,11 @@ public interface EventService {
      * Search events by keyword
      */
     List<EventDTO> searchEvents(String keyword);
+    
+    /**
+     * Search events by keyword with pagination
+     */
+    Page<EventDTO> searchEvents(String keyword, Pageable pageable);
     
     /**
      * Filter events with multiple criteria
@@ -85,6 +95,11 @@ public interface EventService {
     List<EventDTO> getUpcomingEvents();
     
     /**
+     * Get upcoming events with limit
+     */
+    List<EventDTO> getUpcomingEvents(int limit);
+    
+    /**
      * Get past events
      */
     List<EventDTO> getPastEvents();
@@ -93,6 +108,16 @@ public interface EventService {
      * Get available events (with available seats)
      */
     List<EventDTO> getAvailableEvents();
+    
+    /**
+     * Get all available categories
+     */
+    List<String> getAllCategories();
+    
+    /**
+     * Toggle event active status (Admin only)
+     */
+    EventDTO toggleEventStatus(Long id);
     
     /**
      * Soft delete event (Admin only)
